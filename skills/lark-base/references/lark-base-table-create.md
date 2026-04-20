@@ -43,6 +43,9 @@ POST /open-apis/base/v3/bases/:base_token/tables
 - 至少返回 `table`。
 - 传了 `--fields` / `--view` 时，还会附带 `fields` / `views`。
 
+> [!IMPORTANT]
+> 如果这次是在刚创建的新 Base 里新增非默认表，返回建表成功后，必须主动澄清默认空表是否保留，例如：`下一步如果你不打算保留初始默认表，我可以继续帮你删掉；要我现在继续吗？`
+
 ## 工作流
 
 
