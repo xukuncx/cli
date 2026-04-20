@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/larksuite/cli/internal/output"
+	"github.com/larksuite/cli/shortcuts/common"
 )
 
 type documentRef struct {
@@ -54,6 +55,26 @@ func extractDocumentToken(raw, marker string) (string, bool) {
 		return "", false
 	}
 	return token, true
+}
+
+// doDocAPI executes an OpenAPI request against the docs_ai endpoints and returns
+// the parsed "data" field from the standard Lark response envelope {code, msg, data}.
+func doDocAPI(runtime *common.RuntimeContext, method, apiPath string, body interface{}) (map[string]interface{}, error) {
+	return runtime.DoAPIJSON(method, apiPath, nil, body)
+}
+
+// stripBlockIDs removes "block_id" from each entry in data.document.newblocks.
+func stripBlockIDs(data map[string]interface{}) {
+	doc, _ := data["document"].(map[string]interface{})
+	if doc == nil {
+		return
+	}
+	blocks, _ := doc["newblocks"].([]interface{})
+	for _, b := range blocks {
+		if m, ok := b.(map[string]interface{}); ok {
+			delete(m, "block_id")
+		}
+	}
 }
 
 func buildDriveRouteExtra(docID string) (string, error) {

@@ -488,12 +488,46 @@ func (ctx *RuntimeContext) Out(data interface{}, meta *output.Meta) {
 	fmt.Fprintln(ctx.IO().Out, string(b))
 }
 
+// OutRaw prints a success JSON envelope to stdout with HTML escaping disabled.
+// Use this instead of Out when the data contains XML/HTML content (e.g. document bodies)
+// that should be preserved as-is in JSON output.
+func (ctx *RuntimeContext) OutRaw(data interface{}, meta *output.Meta) {
+	env := output.Envelope{OK: true, Identity: string(ctx.As()), Data: data, Meta: meta, Notice: output.GetNotice()}
+	if ctx.JqExpr != "" {
+		if err := output.JqFilter(ctx.IO().Out, env, ctx.JqExpr); err != nil {
+			fmt.Fprintf(ctx.IO().ErrOut, "error: %v\n", err)
+			if ctx.outputErr == nil {
+				ctx.outputErr = err
+			}
+		}
+		return
+	}
+	enc := json.NewEncoder(ctx.IO().Out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(env)
+}
+
 // OutFormat prints output based on --format flag.
 // "json" (default) outputs JSON envelope; "pretty" calls prettyFn; others delegate to FormatValue.
 // When JqExpr is set, routes through Out() regardless of format.
 func (ctx *RuntimeContext) OutFormat(data interface{}, meta *output.Meta, prettyFn func(w io.Writer)) {
+	ctx.outFormat(data, meta, prettyFn, false)
+}
+
+// OutFormatRaw is like OutFormat but with HTML escaping disabled in JSON output.
+// Use this when the data contains XML/HTML content that should be preserved as-is.
+func (ctx *RuntimeContext) OutFormatRaw(data interface{}, meta *output.Meta, prettyFn func(w io.Writer)) {
+	ctx.outFormat(data, meta, prettyFn, true)
+}
+
+func (ctx *RuntimeContext) outFormat(data interface{}, meta *output.Meta, prettyFn func(w io.Writer), raw bool) {
+	outFn := ctx.Out
+	if raw {
+		outFn = ctx.OutRaw
+	}
 	if ctx.JqExpr != "" {
-		ctx.Out(data, meta)
+		outFn(data, meta)
 		return
 	}
 	switch ctx.Format {
@@ -501,10 +535,10 @@ func (ctx *RuntimeContext) OutFormat(data interface{}, meta *output.Meta, pretty
 		if prettyFn != nil {
 			prettyFn(ctx.IO().Out)
 		} else {
-			ctx.Out(data, meta)
+			outFn(data, meta)
 		}
 	case "json", "":
-		ctx.Out(data, meta)
+		outFn(data, meta)
 	default:
 		// table, csv, ndjson — pass data directly; FormatValue handles both
 		// plain arrays and maps with array fields (e.g. {"members":[…]})
@@ -595,6 +629,9 @@ func (s Shortcut) mountDeclarative(parent *cobra.Command, f *cmdutil.Factory) {
 	registerShortcutFlags(cmd, &shortcut)
 	cmdutil.SetTips(cmd, shortcut.Tips)
 	parent.AddCommand(cmd)
+	if shortcut.PostMount != nil {
+		shortcut.PostMount(cmd)
+	}
 }
 
 // runShortcut is the execution pipeline for a declarative shortcut.
