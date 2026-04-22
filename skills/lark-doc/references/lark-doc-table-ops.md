@@ -25,7 +25,7 @@
 
 | 操作类型 | 使用指令 | 说明 |
 |----------|----------|------|
-| 插入/删除行或列 | `table_insert_rows` / `table_delete_cols` 等 | 结构性变更，~20 tokens/op |
+| 插入/删除行或列 | `table_insert_rows` / `table_delete_cols` 等 | 结构性变更 |
 | 合并/拆分单元格 | `table_merge_cells` / `table_unmerge_cells` | 结构性变更 |
 | 设置表头、调整列宽 | `table_update_property`（表级模式） | 表级属性 |
 | 单元格背景色、垂直对齐 | `table_update_property`（单元格模式） | 单元格样式 |
@@ -73,15 +73,16 @@ lark-cli docs +fetch --api-version v2 --doc "<url>" --detail with-ids
 
 | 参数 | 正常取值 | 特殊值 |
 |------|----------|--------|
-| `--row-index`（insert） | 1-based 行号，`--row-index N` ⇒ 新行成为第 N 行（已有第 N 行及之后的行向下平移） | `0` = 首行之前（语义同 `1`）；`-1` = 末尾追加 |
-| `--row-start` / `--row-end`（delete） | 1-based 行号，左闭右开：`--row-start 1 --row-end 3` = 删第 1、2 行 | `0` 不合法，服务端会拒绝 |
-| `--cell` / `--range`（A1） | A1 记法 — 字母列 + 1-based 行号，`A1` = 第 1 列第 1 行；`A1:C3` 两端都包含 | — |
-| `--col` / `--col-start` / `--col-end` | Excel 字母列，`A` = 第 1 列；`--col-start A --col-end C` 两端都包含 | `--col 0` = 首列之前插入；`--col -1` = 末尾追加（仅 `--col` 支持） |
+| `--row-index`（insert） | 1-based 行号（与 A1 行号对齐；thead 和 tbody 不分开计数），`--row-index N` ⇒ 新行成为第 N 行，已有第 N 行及之后下移 | `0` = append 兜底（同 `-1`，见下方实现注记）；`-1` = 末尾追加 |
+| `--row-start` / `--row-end`（delete / update_property 行模式） | 1-based 行号（与 A1 行号对齐；thead 和 tbody 不分开计数），**左闭右开**：`--row-start 1 --row-end 3` = 覆盖第 1、2 行 | `0` 不合法，服务端拒绝 |
+| `--cell` / `--range`（A1） | A1 记法 — 字母列 + 1-based 行号，`A1` = 第 1 列第 1 行；`A1:C3` **两端都包含**（A1 习惯） | — |
+| `--col-start` / `--col-end`（delete / update_property 列模式） | 字母列，**左闭右开**：`--col-start A --col-end D` = 覆盖 A、B、C 三列 | 无哨兵值 |
+| `--col`（insert） | 字母列，`A` = 第 1 列 | `0` = 首列之前；`-1` = 末尾追加 |
 
 **共用法则：**
-- 正常取值 → 1-based 对齐日常表格直觉（行号从 1 开始）；
-- `0` → "首"方向的哨兵（首行之前 / 首列之前）；
-- `-1` → "末尾"方向的哨兵（仅 `--row-index` 和 `--col` 支持，用于 `append` 语义）。
+- **行 / 列范围（`--row-start/--row-end`、`--col-start/--col-end`）**：统一 1-based 左闭右开 `[start, end)`。
+- **A1 矩形（`--range`、`--cell`）**：沿用 A1 习惯，两端都包含。
+- **单值哨兵**：仅 `--row-index` 和 `--col` 支持 `0` / `-1`，语义见各自说明。
 
 > **实现注记（了解即可）：** CLI 层 `--row-index=0` 由于 Go 整型零值处理，会被视为"未设置"而不下发，SDK 默认按 `-1`（末尾追加）兜底。两者在空表 / 单行表上结果一致；若要显式"插到首行之前"，推荐直接传 `--row-index 1`。见 `cli/shortcuts/doc/docs_update_table.go:243-250`。
 
@@ -89,11 +90,11 @@ lark-cli docs +fetch --api-version v2 --doc "<url>" --detail with-ids
 
 ### table_insert_rows — 插入行
 
-在指定位置插入一行空行。`--row-index N`（**1-based**）= 插入后新行成为第 N 行，已有第 N 行及之后的行向下平移。
+在指定位置插入一行空行。`--row-index N`（**1-based**，与 A1 行号对齐；**thead 与 tbody 不分开计数**）= 插入后新行成为第 N 行，已有第 N 行及之后的行向下平移。
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `--row-index` | 是 | 1-based 行号，新行将成为第 N 行。特殊值：`0` = 首行之前（同 `1`）；`-1` = 末尾追加 |
+| `--row-index` | 是 | 1-based 行号（thead 也参与计数），新行将成为第 N 行。特殊值：`0` = append 兜底（同 `-1`）；`-1` = 末尾追加 |
 
 ```bash
 # 末尾追加一行（最常用）
@@ -101,12 +102,12 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_insert_rows \
   --table-block-id blkcnXXXX --row-index -1
 
-# 新行成为第 2 行（原第 2 行及以后整体下移）
+# 新行成为第 2 行（原第 2 行及以后整体下移；带 thead 的表上就是插在 thead 之后）
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_insert_rows \
   --table-block-id blkcnXXXX --row-index 2
 
-# 首行之前插入（显式推荐写法）
+# 插到表格最前面（带 thead 的表上原 thead 会被下推为第 2 行）
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_insert_rows \
   --table-block-id blkcnXXXX --row-index 1
@@ -196,16 +197,17 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
 
 ### table_unmerge_cells — 拆分单元格
 
-拆分已合并的单元格。指定合并区域内**任意一个**单元格坐标即可。
+拆分已合并的单元格。指定合并区域内**任意一个**单元格坐标即可——服务端会自动定位到所在合并区。若锚点不在任何合并区内，会返回明确错误而非静默 no-op。
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | `--cell` | 是 | 合并区域内任一单元格，A1 记法 |
 
 ```bash
+# 合并区 B2:C3，任选 B2 / B3 / C2 / C3 都能解除
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_unmerge_cells \
-  --table-block-id blkcnXXXX --cell A1
+  --table-block-id blkcnXXXX --cell C3
 ```
 
 ### table_update_property — 表格/单元格属性
@@ -247,11 +249,11 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
 | 定位模式 | 参数 | 语义 |
 |---------|------|------|
 | **单格** | `--cell B3` | 单个单元格，A1 记法 |
-| **A1 矩形** | `--range A1:C3` | 矩形区域，两端都包含 |
-| **整行区间** | `--row-start N --row-end M` | 1-based 左闭右开（`--row-start 2 --row-end 5` 选中第 2、3、4 行），整行跨所有列 |
-| **整列区间** | `--col-start A --col-end C` | 列字母、**两端都包含**（`--col-start A --col-end C` 选中 A、B、C 三列），整列跨所有行 |
+| **A1 矩形** | `--range A1:C3` | 矩形区域，两端都包含（A1 记法约定） |
+| **整行区间** | `--row-start N --row-end M` | 1-based **左闭右开**（`--row-start 2 --row-end 5` 选中第 2、3、4 行），整行跨所有列 |
+| **整列区间** | `--col-start A --col-end D` | 字母列、**左闭右开**（`--col-start A --col-end D` 选中 A、B、C 三列），整列跨所有行 |
 
-> **列范围语义提醒：** `table_delete_cols` 的 `--col-start/--col-end` 是左闭右开（见上文），而 `table_update_property` 的 `--col-start/--col-end` 是**闭区间**，直观对齐"从 A 染到 C"。选错会多染一列或少染一列 —— 按上表确认。
+> **区间语义统一**：除 A1 记法（`--range`、`--cell`）沿用两端都包含的传统，所有 `--row-start/--row-end`、`--col-start/--col-end` 一律为 **1-based 左闭右开 `[start, end)`**；包括 `table_delete_cols`、`table_delete_rows` 以及 `table_update_property` 的行 / 列区间模式。
 
 | 样式参数 | 必填 | 说明 |
 |---------|------|------|
@@ -277,11 +279,11 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
   --table-block-id blkcnXXXX \
   --row-start 2 --row-end 5 --vertical-align middle
 
-# 整列区间：把 B、C 两列染成浅灰（数据列与标签列区分）
+# 整列区间：把 B、C 两列染成浅灰（数据列与标签列区分；半开区间 --col-end 填 D）
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_update_property \
   --table-block-id blkcnXXXX \
-  --col-start B --col-end C --background-color light-gray
+  --col-start B --col-end D --background-color light-gray
 
 # 组合：一次调用同时设表头行 + 给第 1 行染浅蓝（典型"套表头样式"）
 lark-cli docs +update --api-version v2 --doc "<url>" \

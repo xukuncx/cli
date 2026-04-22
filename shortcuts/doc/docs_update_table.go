@@ -39,11 +39,11 @@ func tableUpdateFlags() []common.Flag {
 		{Name: "cell", Desc: "cell coordinate in A1 notation (e.g. A1, B3)", Hidden: true},
 		{Name: "range", Desc: "cell range in A1 notation, inclusive (e.g. A1:C3)", Hidden: true},
 		{Name: "col", Desc: "column letter (A, B, ...) or 0=before-first, -1=append", Hidden: true},
-		{Name: "row-index", Type: "int", Desc: "row position (0-indexed, -1=end)", Hidden: true},
+		{Name: "row-index", Type: "int", Desc: "row position (1-based, aligned with A1 row numbers; 0=append fallback, 1=insert as row 1, -1=end)", Hidden: true},
 		{Name: "row-start", Type: "int", Desc: "row start index (1-based, inclusive; e.g. 1=first row)", Hidden: true},
 		{Name: "row-end", Type: "int", Desc: "row end index (1-based, exclusive; e.g. 2=up to but not including second row)", Hidden: true},
-		{Name: "col-start", Desc: "column range start letter (inclusive)", Hidden: true},
-		{Name: "col-end", Desc: "column range end letter (inclusive)", Hidden: true},
+		{Name: "col-start", Desc: "column range start letter (inclusive; range is half-open [col-start, col-end))", Hidden: true},
+		{Name: "col-end", Desc: "column range end letter (exclusive; range is half-open [col-start, col-end))", Hidden: true},
 		{Name: "col-width", Type: "int", Desc: "column width in px", Hidden: true},
 		{Name: "header-row", Type: "bool", Desc: "set first row as header", Hidden: true},
 		{Name: "header-column", Type: "bool", Desc: "set first column as header", Hidden: true},
@@ -201,8 +201,8 @@ func validateTableUpdate(_ context.Context, runtime *common.RuntimeContext) erro
 		if err != nil {
 			return common.FlagErrorf("--col-end: %v", err)
 		}
-		if e < s {
-			return common.FlagErrorf("--col-end must be >= --col-start")
+		if e <= s {
+			return common.FlagErrorf("--col-end must be > --col-start (ranges are half-open; got --col-start %s --col-end %s)", colStart, colEnd)
 		}
 	case "table_merge_cells":
 		rangeStr := runtime.Str("range")
@@ -226,7 +226,7 @@ func validateTableUpdate(_ context.Context, runtime *common.RuntimeContext) erro
 		//   cellMode   : --cell B3
 		//   rangeMode  : --range A1:C3
 		//   rowMode    : --row-start + --row-end (1-based, half-open)
-		//   colMode    : --col-start + --col-end (letters, inclusive end)
+		//   colMode    : --col-start + --col-end (letters, half-open [start, end))
 		cellStr := runtime.Str("cell")
 		rangeStr := runtime.Str("range")
 		rowStart := runtime.Int("row-start")
@@ -246,7 +246,7 @@ func validateTableUpdate(_ context.Context, runtime *common.RuntimeContext) erro
 			}
 		}
 		if modes > 1 {
-			return common.FlagErrorf("--cell, --range, --row-start/--row-end, --col-start/--col-end are mutually exclusive for table_update_property. Pick one targeting mode — example: --cell B3, or --range A1:C3, or --row-start 1 --row-end 3, or --col-start A --col-end C.")
+			return common.FlagErrorf("--cell, --range, --row-start/--row-end, --col-start/--col-end are mutually exclusive for table_update_property. Pick one targeting mode — example: --cell B3, or --range A1:C3, or --row-start 1 --row-end 3, or --col-start A --col-end D.")
 		}
 
 		switch {
@@ -276,7 +276,7 @@ func validateTableUpdate(_ context.Context, runtime *common.RuntimeContext) erro
 			}
 		case colMode:
 			if colStart == "" || colEnd == "" {
-				return common.FlagErrorf("--col-start and --col-end are both required for column range (e.g. --col-start A --col-end C selects columns A, B, C)")
+				return common.FlagErrorf("--col-start and --col-end are both required for column range (half-open [start, end); e.g. --col-start A --col-end D selects columns A, B, C)")
 			}
 			s, err := parseColLetter(colStart)
 			if err != nil {
@@ -286,8 +286,8 @@ func validateTableUpdate(_ context.Context, runtime *common.RuntimeContext) erro
 			if err != nil {
 				return common.FlagErrorf("--col-end: %v", err)
 			}
-			if e < s {
-				return common.FlagErrorf("--col-end must be >= --col-start (got --col-start %s --col-end %s)", colStart, colEnd)
+			if e <= s {
+				return common.FlagErrorf("--col-end must be > --col-start (ranges are half-open; got --col-start %s --col-end %s)", colStart, colEnd)
 			}
 			if err := validateStyleFlags(runtime, "column"); err != nil {
 				return err

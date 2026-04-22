@@ -238,7 +238,15 @@ func TestValidateTableUpdate_TableUpdateProperty_Modes(t *testing.T) {
 				"command": "table_update_property", "table-block-id": "tbl",
 				"col-start": "C", "col-end": "A", "background-color": "red",
 			},
-			wantErrMatch: "--col-end must be >= --col-start",
+			wantErrMatch: "--col-end must be > --col-start",
+		},
+		{
+			name: "col-end equal to col-start (half-open empty range)",
+			stringFlags: map[string]string{
+				"command": "table_update_property", "table-block-id": "tbl",
+				"col-start": "B", "col-end": "B", "background-color": "red",
+			},
+			wantErrMatch: "--col-end must be > --col-start",
 		},
 		{
 			name: "range without styling",
