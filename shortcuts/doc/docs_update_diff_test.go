@@ -17,6 +17,7 @@ func TestComputeMarkdownDiff(t *testing.T) {
 		after           string
 		wantEmpty       bool
 		wantContainsAll []string
+		wantLacks       []string
 	}{
 		{
 			name:      "identical inputs yield empty diff",
@@ -82,6 +83,22 @@ func TestComputeMarkdownDiff(t *testing.T) {
 			after:     "",
 			wantEmpty: true,
 		},
+		{
+			// Regression: strings.Split("", "\n") returns [""], which would
+			// have produced a spurious "-\n" blank-line deletion on empty→content.
+			name:            "empty before to non-empty after has only additions",
+			before:          "",
+			after:           "new content",
+			wantContainsAll: []string{"+new content"},
+			wantLacks:       []string{"-\n"},
+		},
+		{
+			name:            "non-empty before to empty after has only deletions",
+			before:          "old content",
+			after:           "",
+			wantContainsAll: []string{"-old content"},
+			wantLacks:       []string{"+\n"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -100,6 +117,11 @@ func TestComputeMarkdownDiff(t *testing.T) {
 			for _, needle := range tt.wantContainsAll {
 				if !strings.Contains(got, needle) {
 					t.Errorf("diff missing expected substring %q; full diff:\n%s", needle, got)
+				}
+			}
+			for _, forbidden := range tt.wantLacks {
+				if strings.Contains(got, forbidden) {
+					t.Errorf("diff unexpectedly contains %q; full diff:\n%s", forbidden, got)
 				}
 			}
 		})

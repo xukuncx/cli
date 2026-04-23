@@ -30,8 +30,8 @@ func computeMarkdownDiff(before, after string) string {
 	if before == after {
 		return ""
 	}
-	beforeLines := strings.Split(before, "\n")
-	afterLines := strings.Split(after, "\n")
+	beforeLines := splitDiffLines(before)
+	afterLines := splitDiffLines(after)
 
 	// Longest common prefix.
 	prefix := 0
@@ -90,10 +90,27 @@ func computeMarkdownDiff(before, after string) string {
 	return sb.String()
 }
 
+// splitDiffLines behaves like strings.Split(s, "\n") except that the empty
+// string is mapped to a zero-length slice rather than a slice containing one
+// empty element. Without this shim an empty-vs-content diff would emit a
+// spurious blank-line deletion/addition because Split("", "\n") yields [""].
+func splitDiffLines(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
+}
+
 // fetchMarkdownForDiff calls the fetch-doc MCP tool and extracts the
 // markdown payload. Errors are returned verbatim so the caller can decide
 // whether to block the update on a failing snapshot (currently: no — the
 // update still proceeds and the diff section is skipped).
+//
+// A paginated response (has_more=true) is reported as an error instead of
+// silently returning the first page: diffing a partial snapshot produces
+// misleading output (edits outside the fetched range look like "no textual
+// change"), and the right fix — paginating all the way — is a bigger
+// investment than the --show-diff surface currently warrants.
 func fetchMarkdownForDiff(runtime *common.RuntimeContext, docID string) (string, error) {
 	result, err := common.CallMCPTool(runtime, "fetch-doc", map[string]interface{}{
 		"doc_id":           docID,
@@ -101,6 +118,9 @@ func fetchMarkdownForDiff(runtime *common.RuntimeContext, docID string) (string,
 	})
 	if err != nil {
 		return "", err
+	}
+	if hasMore, ok := result["has_more"].(bool); ok && hasMore {
+		return "", fmt.Errorf("fetch-doc returned a paginated snapshot (has_more=true); --show-diff cannot diff partial documents")
 	}
 	md, _ := result["markdown"].(string)
 	return md, nil
