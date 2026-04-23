@@ -20,6 +20,10 @@ lark-cli docs +fetch --doc Z1FjxxxxxxxxxxxxxxxxxxxtnAc --offset 0 --limit 50
 
 # 人类可读格式输出
 lark-cli docs +fetch --doc Z1FjxxxxxxxxxxxxxxxxxxxtnAc --format pretty
+
+# Round-trip 安全的 body 输出（不带 `# <title>` 前缀）
+# 用于 fetch → edit → `docs +update --mode=overwrite` 流程，避免标题累积
+lark-cli docs +fetch --doc Z1FjxxxxxxxxxxxxxxxxxxxtnAc --format pretty --omit-title
 ```
 
 ## 参数
@@ -30,6 +34,7 @@ lark-cli docs +fetch --doc Z1FjxxxxxxxxxxxxxxxxxxxtnAc --format pretty
 | `--offset` | 否 | 分页偏移 |
 | `--limit` | 否 | 分页大小 |
 | `--format` | 否 | 输出格式：json（默认，含 title、markdown、has_more 等字段） \| pretty |
+| `--omit-title` | 否 | 在 `--format=pretty` 下略去开头的 `# <title>`。飞书文档的 title 是独立字段，`docs +update --mode=overwrite` 不会覆盖它；如果带标题回灌会在正文重复累积一行 H1。round-trip 场景下推荐开启 |
 
 ## 重要：图片、文件、画板的处理
 

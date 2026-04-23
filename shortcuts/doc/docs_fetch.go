@@ -24,6 +24,7 @@ var DocsFetch = common.Shortcut{
 		{Name: "doc", Desc: "document URL or token", Required: true},
 		{Name: "offset", Desc: "pagination offset"},
 		{Name: "limit", Desc: "pagination limit"},
+		{Name: "omit-title", Type: "bool", Desc: "in --format=pretty output, skip the leading '# <title>' line. Lark stores document title as an independent field, so including it when piping fetch output into `docs +update --mode=overwrite` accumulates duplicate H1 blocks on every round-trip."},
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		args := map[string]interface{}{
@@ -69,17 +70,33 @@ var DocsFetch = common.Shortcut{
 			result["markdown"] = fixExportedMarkdown(md)
 		}
 
+		omitTitle := runtime.Bool("omit-title")
 		runtime.OutFormat(result, nil, func(w io.Writer) {
-			if title, ok := result["title"].(string); ok && title != "" {
-				fmt.Fprintf(w, "# %s\n\n", title)
-			}
-			if md, ok := result["markdown"].(string); ok {
-				fmt.Fprintln(w, md)
-			}
-			if hasMore, ok := result["has_more"].(bool); ok && hasMore {
-				fmt.Fprintln(w, "\n--- more content available, use --offset and --limit to paginate ---")
-			}
+			renderFetchPretty(w, result, omitTitle)
 		})
 		return nil
 	},
+}
+
+// renderFetchPretty writes the human-readable (pretty) form of a fetch-doc
+// result to w. Split out from Execute so tests can verify the --omit-title
+// behavior directly without spinning up a runtime/MCP mock.
+//
+// When omitTitle is false (default), the leading "# <title>\n\n" is
+// preserved for reader orientation. When true, the title line is skipped so
+// the output is safe to pipe into `docs +update --mode=overwrite` without
+// accumulating duplicate H1 blocks on every round-trip (see Case 13 in the
+// pitfall list).
+func renderFetchPretty(w io.Writer, result map[string]interface{}, omitTitle bool) {
+	if !omitTitle {
+		if title, ok := result["title"].(string); ok && title != "" {
+			fmt.Fprintf(w, "# %s\n\n", title)
+		}
+	}
+	if md, ok := result["markdown"].(string); ok {
+		fmt.Fprintln(w, md)
+	}
+	if hasMore, ok := result["has_more"].(bool); ok && hasMore {
+		fmt.Fprintln(w, "\n--- more content available, use --offset and --limit to paginate ---")
+	}
 }
