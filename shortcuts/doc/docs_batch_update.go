@@ -49,6 +49,23 @@ var validBatchOnError = map[string]bool{
 // left in a partial-apply state; pair with --on-error=stop + `docs +fetch`
 // to recover manually. This tradeoff is explicit in the shortcut's
 // description.
+//
+// Two design notes worth calling out for callers:
+//
+//  1. Validate runs once up front against the static op list, before any
+//     MCP write. It cannot foresee in-batch staleness — for example, if
+//     op[0] deletes a section that op[1]'s --selection-by-title resolves
+//     into, op[1] passes Validate but fails at execute time. This is by
+//     design (sequential semantics; each op sees the doc state produced
+//     by the previous op). If you need stricter atomicity, split the
+//     batch or fetch the doc between groups of related ops.
+//
+//  2. On --on-error=stop the shortcut emits TWO failure signals: the
+//     stdout JSON envelope (with stopped_early=true and the partial
+//     result list), AND a non-zero exit via the returned error. They are
+//     complementary: scripts that key on exit code see "the batch did
+//     not complete cleanly"; callers parsing JSON see "exactly which
+//     ops succeeded and how far we got". Don't treat them as redundant.
 var DocsBatchUpdate = common.Shortcut{
 	Service:     "docs",
 	Command:     "+batch-update",
@@ -138,7 +155,7 @@ var DocsBatchUpdate = common.Shortcut{
 				}
 				continue
 			}
-			normalizeDocsUpdateResult(out, op.Markdown)
+			normalizeWhiteboardResult(out, op.Markdown)
 			results = append(results, batchUpdateResult{
 				Index: i, Mode: op.Mode, Success: true, Result: out,
 			})
@@ -206,7 +223,7 @@ func parseBatchUpdateOps(raw string) ([]batchUpdateOp, error) {
 // own Validate phase, before any MCP work, so a single malformed op fails
 // the whole invocation up front instead of after N successful ops.
 func validateBatchUpdateOp(op batchUpdateOp) error {
-	if !validModes[op.Mode] {
+	if !validModesV1[op.Mode] {
 		return fmt.Errorf("invalid mode %q, valid: append | overwrite | replace_range | replace_all | insert_before | insert_after | delete_range", op.Mode)
 	}
 	if op.Mode != "delete_range" && op.Markdown == "" {
@@ -215,11 +232,11 @@ func validateBatchUpdateOp(op batchUpdateOp) error {
 	if op.SelectionWithEllipsis != "" && op.SelectionByTitle != "" {
 		return fmt.Errorf("selection_with_ellipsis and selection_by_title are mutually exclusive")
 	}
-	if needsSelection[op.Mode] && op.SelectionWithEllipsis == "" && op.SelectionByTitle == "" {
+	if needsSelectionV1[op.Mode] && op.SelectionWithEllipsis == "" && op.SelectionByTitle == "" {
 		return fmt.Errorf("mode=%s requires selection_with_ellipsis or selection_by_title", op.Mode)
 	}
 	if op.SelectionByTitle != "" {
-		if err := validateSelectionByTitle(op.SelectionByTitle); err != nil {
+		if err := validateSelectionByTitleV1(op.SelectionByTitle); err != nil {
 			return err
 		}
 	}
