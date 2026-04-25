@@ -325,18 +325,18 @@ func (ctx *RuntimeContext) DoAPIStream(callCtx context.Context, req *larkcore.Ap
 
 // DoAPIJSON calls the Lark API via DoAPI, parses the JSON response envelope,
 // and returns the "data" field. Suitable for standard JSON APIs (non-file).
-func (ctx *RuntimeContext) DoAPIJSON(method, apiPath string, query larkcore.QueryParams, body any) (map[string]any, error) {
-	return ctx.doAPIJSON(method, apiPath, query, body, false)
+func (ctx *RuntimeContext) DoAPIJSON(method, apiPath string, query larkcore.QueryParams, body any, opts ...larkcore.RequestOptionFunc) (map[string]any, error) {
+	return ctx.doAPIJSON(method, apiPath, query, body, false, opts...)
 }
 
 // DoAPIJSONWithLogID is like DoAPIJSON but merges x-tt-logid from the response
 // header into the returned data and into error details as "log_id". Intended
 // for endpoints where surfacing the log id aids troubleshooting (e.g. doc v2).
-func (ctx *RuntimeContext) DoAPIJSONWithLogID(method, apiPath string, query larkcore.QueryParams, body any) (map[string]any, error) {
-	return ctx.doAPIJSON(method, apiPath, query, body, true)
+func (ctx *RuntimeContext) DoAPIJSONWithLogID(method, apiPath string, query larkcore.QueryParams, body any, opts ...larkcore.RequestOptionFunc) (map[string]any, error) {
+	return ctx.doAPIJSON(method, apiPath, query, body, true, opts...)
 }
 
-func (ctx *RuntimeContext) doAPIJSON(method, apiPath string, query larkcore.QueryParams, body any, includeLogID bool) (map[string]any, error) {
+func (ctx *RuntimeContext) doAPIJSON(method, apiPath string, query larkcore.QueryParams, body any, includeLogID bool, opts ...larkcore.RequestOptionFunc) (map[string]any, error) {
 	req := &larkcore.ApiReq{
 		HttpMethod:  method,
 		ApiPath:     apiPath,
@@ -345,7 +345,7 @@ func (ctx *RuntimeContext) doAPIJSON(method, apiPath string, query larkcore.Quer
 	if body != nil {
 		req.Body = body
 	}
-	resp, err := ctx.DoAPI(req)
+	resp, err := ctx.DoAPI(req, opts...)
 	if err != nil {
 		return nil, err
 	}

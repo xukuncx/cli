@@ -6,7 +6,10 @@ package doc
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
+
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/shortcuts/common"
@@ -67,7 +70,14 @@ func extractDocumentToken(raw, marker string) (string, bool) {
 // Uses the log-id-aware variant so the x-tt-logid header is surfaced in both the
 // success payload and error details — doc v2 callers rely on it for support escalations.
 func doDocAPI(runtime *common.RuntimeContext, method, apiPath string, body interface{}) (map[string]interface{}, error) {
-	return runtime.DoAPIJSONWithLogID(method, apiPath, nil, body)
+	boeHeader := func(option *larkcore.RequestOption) {
+		if option.Header == nil {
+			option.Header = make(http.Header)
+		}
+		option.Header.Set("X-TT-ENV", "ppe_general_agent_maoyan")
+		option.Header.Set("env", "pre_release")
+	}
+	return runtime.DoAPIJSONWithLogID(method, apiPath, nil, body, boeHeader)
 }
 
 func docsSceneFromContext(ctx context.Context) string {
