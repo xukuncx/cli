@@ -103,6 +103,11 @@ func validateUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 			return common.FlagErrorf("--command append requires --content")
 		}
 	}
+	if runtime.Str("doc-format") == "markdown" && content != "" {
+		if msg := CheckV2MarkdownCustomTags(content); msg != "" {
+			return common.FlagErrorf("%s", msg)
+		}
+	}
 	return nil
 }
 

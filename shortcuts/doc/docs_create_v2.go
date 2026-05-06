@@ -27,6 +27,11 @@ func validateCreateV2(_ context.Context, runtime *common.RuntimeContext) error {
 	if runtime.Str("parent-token") != "" && runtime.Str("parent-position") != "" {
 		return common.FlagErrorf("--parent-token and --parent-position are mutually exclusive")
 	}
+	if runtime.Str("doc-format") == "markdown" {
+		if msg := CheckV2MarkdownCustomTags(runtime.Str("content")); msg != "" {
+			return common.FlagErrorf("%s", msg)
+		}
+	}
 	return nil
 }
 

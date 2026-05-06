@@ -373,3 +373,136 @@ func TestDocsUpdateWarningsEmpty(t *testing.T) {
 		t.Fatalf("expected no warnings, got: %v", warnings)
 	}
 }
+
+func TestCheckV2MarkdownCustomTags(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		content  string
+		wantHint bool
+		wantTag  string
+	}{
+		{
+			name:     "empty content produces no warning",
+			content:  "",
+			wantHint: false,
+		},
+		{
+			name:     "plain markdown without custom tags is fine",
+			content:  "# Title\n\nSome **bold** paragraph.",
+			wantHint: false,
+		},
+		{
+			name:     "callout tag is safe (supported by v2)",
+			content:  `<callout emoji="💡">content</callout>`,
+			wantHint: false,
+		},
+		{
+			name:     "grid tag triggers warning",
+			content:  `<grid cols="2"><column width="50">A</column></grid>`,
+			wantHint: true,
+			wantTag:  "<grid>",
+		},
+		{
+			name:     "column tag triggers warning",
+			content:  `<column width="50">col content</column>`,
+			wantHint: true,
+			wantTag:  "<column>",
+		},
+		{
+			name:     "lark-table tag triggers warning",
+			content:  "<lark-table>\n<lark-tr><lark-td>cell</lark-td></lark-tr>\n</lark-table>",
+			wantHint: true,
+			wantTag:  "<lark-table>",
+		},
+		{
+			name:     "text color tag triggers warning",
+			content:  `<text color="red">colored text</text>`,
+			wantHint: true,
+			wantTag:  "<text color=...>",
+		},
+		{
+			name:     "multiple custom tags all appear in message",
+			content:  `<grid cols="2"><lark-table><lark-tr></lark-tr></lark-table></grid>`,
+			wantHint: true,
+			wantTag:  "<grid>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := CheckV2MarkdownCustomTags(tt.content)
+			hasHint := got != ""
+			if hasHint != tt.wantHint {
+				t.Fatalf("CheckV2MarkdownCustomTags(%q) = %q, wantHint=%v", tt.content, got, tt.wantHint)
+			}
+			if tt.wantTag != "" && !strings.Contains(got, tt.wantTag) {
+				t.Fatalf("expected message to contain %q, got: %q", tt.wantTag, got)
+			}
+		})
+	}
+}
+
+func TestCheckDocsUpdateWholeParagraphStyle(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		markdown string
+		wantHint bool
+	}{
+		{
+			name:     "plain paragraph no warning",
+			markdown: "This is a normal paragraph.",
+			wantHint: false,
+		},
+		{
+			name:     "inline bold within mixed line is fine",
+			markdown: "See **important** detail here.",
+			wantHint: false,
+		},
+		{
+			name:     "whole line italic triggers warning",
+			markdown: "*为什么大家都选代码？*",
+			wantHint: true,
+		},
+		{
+			name:     "whole line bold triggers warning",
+			markdown: "**回到最初的问题：要用长期的耐心去打磨。**",
+			wantHint: true,
+		},
+		{
+			name:     "whole line italic inside larger doc triggers warning",
+			markdown: "# Title\n\nSome prose.\n\n*整段斜体行*\n\nMore prose.",
+			wantHint: true,
+		},
+		{
+			name:     "triple asterisk not matched (covered by bold+italic check)",
+			markdown: "***text***",
+			wantHint: false,
+		},
+		{
+			name:     "whole paragraph style inside code fence is ignored",
+			markdown: "```\n*not a paragraph*\n```",
+			wantHint: false,
+		},
+		{
+			name:     "empty markdown no warning",
+			markdown: "",
+			wantHint: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := checkDocsUpdateWholeParagraphStyle(tt.markdown)
+			hasHint := got != ""
+			if hasHint != tt.wantHint {
+				t.Fatalf("checkDocsUpdateWholeParagraphStyle(%q) = %q, wantHint=%v", tt.markdown, got, tt.wantHint)
+			}
+		})
+	}
+}

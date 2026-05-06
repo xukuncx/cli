@@ -34,12 +34,20 @@ import (
 //     _**text**_   *__text__*
 //     Lark stores only one of the two emphases (usually italic), silently
 //     dropping the other. The user wanted both; they will get one.
+//
+//  3. Whole-paragraph style markers are not rendered by Lark. A line that
+//     consists entirely of *…* or **…** (no other content) is treated as a
+//     literal string rather than an italic or bold paragraph. The markers
+//     appear verbatim in the document instead of applying style.
 func docsUpdateWarnings(mode, markdown string) []string {
 	var warnings []string
 	if w := checkDocsUpdateReplaceMultilineMarkdown(mode, markdown); w != "" {
 		warnings = append(warnings, w)
 	}
 	if w := checkDocsUpdateBoldItalic(markdown); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := checkDocsUpdateWholeParagraphStyle(markdown); w != "" {
 		warnings = append(warnings, w)
 	}
 	return warnings
@@ -278,4 +286,70 @@ func leadingRun(s string, c byte) string {
 		i++
 	}
 	return s[:i]
+}
+
+// wholeParagraphStyleRe matches a line whose entire content is a single
+// emphasis span: *…* or **…** (at least one non-whitespace char inside).
+// CJK and ASCII content both match; we deliberately do NOT match ***…***
+// because that is already covered by checkDocsUpdateBoldItalic.
+var wholeParagraphStyleRe = regexp.MustCompile(`^\*{1,2}[^*\n]+\*{1,2}$`)
+
+// checkDocsUpdateWholeParagraphStyle warns when a markdown paragraph
+// consists entirely of *italic* or **bold** markers. Lark's markdown
+// parser treats such lines as literal strings (the markers appear verbatim)
+// rather than styled paragraphs. This is distinct from inline emphasis
+// embedded in mixed-content lines, which Lark handles correctly.
+func checkDocsUpdateWholeParagraphStyle(markdown string) string {
+	if markdown == "" {
+		return ""
+	}
+	sanitized := stripMarkdownCodeRegions(markdown)
+	for _, line := range strings.Split(sanitized, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if wholeParagraphStyleRe.MatchString(trimmed) {
+			return "line consisting entirely of *…* or **…** markers will not be rendered as italic/bold by Lark; " +
+				"the markers appear as literal characters. " +
+				"Mix the styled text with surrounding prose, or use Lark XML: <em>…</em> / <b>…</b>."
+		}
+	}
+	return ""
+}
+
+// v2MarkdownUnsupportedTags lists Lark custom XML tags that the v2
+// markdown parser does not understand. When present in markdown-mode
+// content, the parser silently strips or corrupts them — collapsing grid
+// columns, discarding lark-table rows, or escaping text-color tags to
+// literal characters. Use --doc-format xml to preserve these constructs.
+var v2MarkdownUnsupportedTags = []struct {
+	prefix  string
+	display string
+}{
+	{"<grid", "<grid>"},
+	{"<column", "<column>"},
+	{"<lark-table", "<lark-table>"},
+	{"<text color=", "<text color=...>"},
+	{"<text colour=", "<text colour=...>"},
+}
+
+// CheckV2MarkdownCustomTags returns a non-empty error message when content
+// contains Lark custom tags that the v2 markdown parser silently corrupts.
+// Callers in Validate should return this as an error; callers in DryRun
+// may choose to surface it as a warning instead.
+func CheckV2MarkdownCustomTags(content string) string {
+	if content == "" {
+		return ""
+	}
+	var found []string
+	for _, t := range v2MarkdownUnsupportedTags {
+		if strings.Contains(content, t.prefix) {
+			found = append(found, t.display)
+		}
+	}
+	if len(found) == 0 {
+		return ""
+	}
+	return "--doc-format markdown does not support Lark custom tags (" +
+		strings.Join(found, ", ") + "); " +
+		"the v2 API will silently strip or corrupt them. " +
+		"Switch to --doc-format xml (the default) to preserve these blocks."
 }
