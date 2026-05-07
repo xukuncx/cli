@@ -266,7 +266,7 @@ Shortcut 是对常用操作的高级封装（`lark-cli drive +<verb> [flags]`）
 | `+sync` | Two-way local ↔ Drive sync. Reuses `+status` diff buckets, pulls `new_remote`, pushes `new_local`, and resolves `modified` via `--on-conflict=remote-wins|local-wins|keep-both|ask`. `--quick` enables best-effort modified-time diffing (timestamp mismatches can still trigger real pull/push actions), `--on-duplicate-remote` supports `fail|newest|oldest`, and the command is intentionally non-destructive (no delete on either side). |
 | [`+create-shortcut`](references/lark-drive-create-shortcut.md) | Create a shortcut to an existing Drive file in another folder |
 | [`+add-comment`](references/lark-drive-add-comment.md) | Add a comment to doc/docx/sheet/slides, also supports wiki URL resolving to doc/docx/sheet/slides |
-| [`+export`](references/lark-drive-export.md) | Export a doc/docx/sheet/bitable to a local file with limited polling; supports `--file-name` for local naming |
+| [`+export`](references/lark-drive-export.md) | Export a doc/docx/sheet/bitable/slides to a local file with limited polling; supports `--file-name` for local naming |
 | [`+export-download`](references/lark-drive-export-download.md) | Download an exported file by file_token |
 | [`+import`](references/lark-drive-import.md) | Import a local file to Drive as a cloud document (docx, sheet, bitable) |
 | [`+version-history`](references/lark-drive-version-history.md) | List historical versions of a file with only_tag=true and cursor-based pagination |
