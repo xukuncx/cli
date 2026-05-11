@@ -28,6 +28,8 @@ const (
 	maxVCMeetingEventsPages    = 200
 )
 
+var meetingDisplayLocation = time.FixedZone("UTC+8", 8*60*60)
+
 // toUnixSeconds converts a supported CLI time input into a Unix seconds string.
 func toUnixSeconds(input string, hint ...string) (string, error) {
 	ts, err := common.ParseTime(input, hint...)
@@ -672,13 +674,13 @@ func formatMeetingWindow(start time.Time, hasStart bool, end time.Time, hasEnd b
 	switch {
 	case hasStart && hasEnd:
 		if !end.After(start) {
-			return fmt.Sprintf("%s（进行中）", start.Local().Format("2006-01-02 15:04:05"))
+			return fmt.Sprintf("%s（进行中）", start.In(meetingDisplayLocation).Format("2006-01-02 15:04:05"))
 		}
-		return fmt.Sprintf("%s - %s", start.Local().Format("2006-01-02 15:04:05"), end.Local().Format("2006-01-02 15:04:05"))
+		return fmt.Sprintf("%s - %s", start.In(meetingDisplayLocation).Format("2006-01-02 15:04:05"), end.In(meetingDisplayLocation).Format("2006-01-02 15:04:05"))
 	case hasStart:
-		return start.Local().Format("2006-01-02 15:04:05")
+		return start.In(meetingDisplayLocation).Format("2006-01-02 15:04:05")
 	case hasEnd:
-		return end.Local().Format("2006-01-02 15:04:05")
+		return end.In(meetingDisplayLocation).Format("2006-01-02 15:04:05")
 	default:
 		return ""
 	}
@@ -697,7 +699,7 @@ func formatTimelineOffset(when time.Time, hasWhen bool, meetingStart time.Time, 
 		return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
 	}
 	if hasWhen {
-		return when.Local().Format("15:04:05")
+		return when.In(meetingDisplayLocation).Format("15:04:05")
 	}
 	return "??:??:??"
 }

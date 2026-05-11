@@ -1,13 +1,12 @@
-***
-
+---
 name: lark-vc-agent
 version: 1.0.0
 description: "飞书视频会议：让机器人代当前用户加入/离开正在进行的会议，并读取会议期间的实时事件（参会人加入与离开、发言、聊天、屏幕共享等）。1. 用户提供 9 位会议号、要求代为入会或离会时使用 +meeting-join / +meeting-leave——会真实产生入会/离会记录。2. 会议进行中用户想知道“谁加入了”“谁离开了”“谁在发言”“有人共享屏幕吗”等会中动态时，机器人入会后用 +meeting-events 读取事件时间线。3. 典型场景：参会机器人、会中助手、代为旁听、代为参会。前提：机器人只能读到它自己参会过且仍在进行中的会议的事件；查询已结束会议的参会名单、纪要或逐字稿请使用 lark-vc 技能。"
 metadata:
-requires:
-bins: \["lark-cli"]
-cliHelp: "lark-cli vc --help"
------------------------------
+  requires:
+    bins: ["lark-cli"]
+  cliHelp: "lark-cli vc --help"
+---
 
 # vc-agent (v1)
 
@@ -120,4 +119,3 @@ Shortcut 是对常用操作的高级封装（`lark-cli vc +<verb> [flags]`）。
 - 妙记产物（AI 总结 / 转写 / 章节）→ [`lark-minutes`](../lark-minutes/SKILL.md)
 - 会后把产物发到群 / 私聊 → [`lark-im`](../lark-im/SKILL.md)
 - 认证、身份切换、scope 管理 → [`lark-shared`](../lark-shared/SKILL.md)
-
