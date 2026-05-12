@@ -439,6 +439,30 @@ func TestCheckV2XMLWarnings(t *testing.T) {
 			content: `<quote-container/><grid><column width="30"/></grid>`,
 			wantLen: 2,
 		},
+		// false-positive guards: names that start with "quote-container" but aren't the tag
+		{
+			name:    "quote-containerized attribute prefix is not flagged",
+			content: `<block quote-containerized="true"/>`,
+			wantLen: 0,
+		},
+		// false-positive guard: data-width should not trigger column warning
+		{
+			name:    "data-width attribute is not flagged",
+			content: `<column data-width="50"/>`,
+			wantLen: 0,
+		},
+		// single-quoted width should be caught
+		{
+			name:    "column single-quoted integer width triggers warning",
+			content: `<grid><column width='30'/></grid>`,
+			wantLen: 1,
+		},
+		// width with spaces around = should be caught
+		{
+			name:    "column width with spaces around equals triggers warning",
+			content: `<grid><column width = "40"/></grid>`,
+			wantLen: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

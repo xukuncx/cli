@@ -310,10 +310,19 @@ func CheckV2XMLBareAmpersand(content string) string {
 		"Escape it as &amp; (and < as &lt;, > as &gt; where needed)."
 }
 
+// quoteContainerTagRe matches the opening of a <quote-container> element
+// (tag name followed by whitespace, >, or />) to avoid false positives on
+// hypothetical attributes or element names that start with "quote-container".
+var quoteContainerTagRe = regexp.MustCompile(`<quote-container(?:\s|>|/)`)
+
 // columnIntWidthRe matches a <column … width="N" …> attribute where N is a
-// plain integer. In v2 XML the valid attribute is width-ratio (a float 0–1),
-// not width. An integer width silently has no effect on column sizing.
-var columnIntWidthRe = regexp.MustCompile(`<column\b[^>]*\bwidth="(\d+)"`)
+// plain integer. The pattern requires whitespace before "width" to avoid
+// matching unrelated attributes such as data-width, and accepts optional
+// whitespace around "=" and either single or double quotes, so forms like
+// width='50' or width = "50" are also detected. Go's RE2 engine does not
+// support backreferences, so mismatched quote pairs (e.g. width="50') are
+// also matched — that is acceptable for a non-blocking warning.
+var columnIntWidthRe = regexp.MustCompile(`<column\b[^>]*\swidth\s*=\s*['"]?\d+['"]?`)
 
 // CheckV2XMLWarnings returns a list of non-fatal warnings for v2 XML content.
 // These describe constructs that are silently dropped or ignored by the v2 API
@@ -332,7 +341,7 @@ func CheckV2XMLWarnings(content string) []string {
 		return nil
 	}
 	var warnings []string
-	if strings.Contains(content, "<quote-container") {
+	if quoteContainerTagRe.MatchString(content) {
 		warnings = append(warnings,
 			"<quote-container> is not supported in v2 XML and will be silently dropped; "+
 				"use <blockquote> instead.")
