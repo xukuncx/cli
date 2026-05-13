@@ -12,7 +12,7 @@ Use this after generating XML and again after creating or editing the deck.
 - Run execution-layer lint when XML is in a file:
 
 ```bash
-python3 skills/lark-slides/scripts/layout_lint.py --input /tmp/presentation.xml
+python3 skills/lark-slides-creator/scripts/layout_lint.py --input /tmp/presentation.xml
 ```
 
 ## After Creation

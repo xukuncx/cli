@@ -127,13 +127,11 @@ Local paths must be safe paths under the current working directory. The upload l
 
 ## Lint And Validation
 
-Use the local lint tool when XML is available in a file:
+This execution skill relies on XML well-formedness, `lark-cli schema`, and the protocol references above. For full-deck creation or visual layout quality checks, the creator skill owns the optional layout lint tool:
 
 ```bash
-python3 skills/lark-slides/scripts/layout_lint.py --input /tmp/presentation.xml
+python3 skills/lark-slides-creator/scripts/layout_lint.py --input /tmp/presentation.xml
 ```
-
-`skills/lark-slides/scripts/xml_text_overlap_lint.py` is kept as a compatibility entry point and delegates to the same lint implementation.
 
 The lint checks XML well-formedness and layout risks such as overlap, bounds, footer collision, and text-height pressure. It is not a full XSD validator. Treat `error` as blocking; review `warning` before executing API calls.
 

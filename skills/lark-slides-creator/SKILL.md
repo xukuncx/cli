@@ -38,7 +38,7 @@ Before running any `lark-cli slides` command or writing final XML:
 Use the execution skill's lint tool from here when XML is available:
 
 ```bash
-python3 skills/lark-slides/scripts/layout_lint.py --input /tmp/presentation.xml
+python3 skills/lark-slides-creator/scripts/layout_lint.py --input /tmp/presentation.xml
 ```
 
 ## Workflow
