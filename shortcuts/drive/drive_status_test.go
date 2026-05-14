@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/httpmock"
@@ -105,6 +106,9 @@ func TestDriveStatusCategorizesByHash(t *testing.T) {
 	}
 
 	out := stdout.String()
+	if !strings.Contains(out, `"detection": "exact"`) {
+		t.Fatalf("output missing detection=exact\noutput: %s", out)
+	}
 	checks := []struct {
 		bucket string
 		path   string
@@ -129,6 +133,152 @@ func TestDriveStatusCategorizesByHash(t *testing.T) {
 
 	if strings.Contains(out, "ignored.docx") || strings.Contains(out, "ignored.lnk") {
 		t.Errorf("output should skip docx/shortcut entries\noutput: %s", out)
+	}
+
+	reg.Verify(t)
+}
+
+func TestDriveStatusQuickCategorizesByModifiedTimeWithoutDownloads(t *testing.T) {
+	f, stdout, _, reg := cmdutil.TestFactory(t, driveTestConfig())
+
+	tmpDir := t.TempDir()
+	withDriveWorkingDir(t, tmpDir)
+
+	if err := os.MkdirAll("local/sub", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile("local/a.txt", []byte("local-a"), 0o644); err != nil {
+		t.Fatalf("WriteFile a.txt: %v", err)
+	}
+	if err := os.WriteFile("local/b.txt", []byte("local-b"), 0o644); err != nil {
+		t.Fatalf("WriteFile b.txt: %v", err)
+	}
+	if err := os.WriteFile("local/sub/c.txt", []byte("local-c"), 0o644); err != nil {
+		t.Fatalf("WriteFile sub/c.txt: %v", err)
+	}
+
+	matchTime := time.Unix(1715594880, 0)
+	changedTime := time.Unix(1715594940, 0)
+	if err := os.Chtimes("local/a.txt", matchTime, matchTime); err != nil {
+		t.Fatalf("Chtimes a.txt: %v", err)
+	}
+	if err := os.Chtimes("local/sub/c.txt", changedTime, changedTime); err != nil {
+		t.Fatalf("Chtimes sub/c.txt: %v", err)
+	}
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=folder_root",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{
+				"files": []interface{}{
+					map[string]interface{}{"token": "tok_a", "name": "a.txt", "type": "file", "modified_time": "1715594880"},
+					map[string]interface{}{"token": "tok_sub", "name": "sub", "type": "folder"},
+					map[string]interface{}{"token": "tok_d", "name": "d.txt", "type": "file", "modified_time": "1715595000"},
+				},
+				"has_more": false,
+			},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=tok_sub",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{
+				"files": []interface{}{
+					map[string]interface{}{"token": "tok_c", "name": "c.txt", "type": "file", "modified_time": "1715594880"},
+				},
+				"has_more": false,
+			},
+		},
+	})
+
+	err := mountAndRunDrive(t, DriveStatus, []string{
+		"+status",
+		"--local-dir", "local",
+		"--folder-token", "folder_root",
+		"--quick",
+		"--as", "bot",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstdout: %s", err, stdout.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, `"detection": "quick"`) {
+		t.Fatalf("output missing detection=quick\noutput: %s", out)
+	}
+	checks := []struct {
+		bucket string
+		path   string
+		token  string
+	}{
+		{"new_local", "b.txt", ""},
+		{"new_remote", "d.txt", "tok_d"},
+		{"modified", "sub/c.txt", "tok_c"},
+		{"unchanged", "a.txt", "tok_a"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(out, `"`+c.bucket+`":`) {
+			t.Errorf("output missing bucket %q\noutput: %s", c.bucket, out)
+		}
+		if !strings.Contains(out, `"rel_path": "`+c.path+`"`) {
+			t.Errorf("output missing rel_path %q (expected in %s)\noutput: %s", c.path, c.bucket, out)
+		}
+		if c.token != "" && !strings.Contains(out, `"file_token": "`+c.token+`"`) {
+			t.Errorf("output missing file_token %q (expected in %s)\noutput: %s", c.token, c.bucket, out)
+		}
+	}
+
+	reg.Verify(t)
+}
+
+func TestDriveStatusQuickMarksUntrustedTimestampAsModified(t *testing.T) {
+	f, stdout, _, reg := cmdutil.TestFactory(t, driveTestConfig())
+
+	tmpDir := t.TempDir()
+	withDriveWorkingDir(t, tmpDir)
+
+	if err := os.MkdirAll("local", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile("local/a.txt", []byte("local"), 0o644); err != nil {
+		t.Fatalf("WriteFile a.txt: %v", err)
+	}
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=folder_root",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{
+				"files": []interface{}{
+					map[string]interface{}{"token": "tok_a", "name": "a.txt", "type": "file", "modified_time": "not-a-timestamp"},
+				},
+				"has_more": false,
+			},
+		},
+	})
+
+	err := mountAndRunDrive(t, DriveStatus, []string{
+		"+status",
+		"--local-dir", "local",
+		"--folder-token", "folder_root",
+		"--quick",
+		"--as", "bot",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstdout: %s", err, stdout.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, `"detection": "quick"`) {
+		t.Fatalf("output missing detection=quick\noutput: %s", out)
+	}
+	if !strings.Contains(out, `"modified":`) || !strings.Contains(out, `"rel_path": "a.txt"`) {
+		t.Fatalf("invalid remote modified_time must fall back to modified\noutput: %s", out)
 	}
 
 	reg.Verify(t)
