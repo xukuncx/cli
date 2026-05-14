@@ -345,7 +345,6 @@ func TestDrivePullTreatsModifiedTimePreservationFailureAsNotice(t *testing.T) {
 
 	reg.Verify(t)
 }
-
 func TestDrivePullShouldSkipSmartFallsBackWhenMetadataCannotBeTrusted(t *testing.T) {
 	f, _, _, _ := cmdutil.TestFactory(t, driveTestConfig())
 

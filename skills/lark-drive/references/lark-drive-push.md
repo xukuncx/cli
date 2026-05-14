@@ -67,6 +67,7 @@ lark-cli drive +push --local-dir ./repo --folder-token fldcnxxxxxxxxx \
 | `--local-dir` | 是 | path | 本地根目录（**必须是 cwd 的相对路径**；绝对路径或逃出 cwd 的相对路径会被 CLI 直接拒绝） |
 | `--folder-token` | 是 | string | 目标 Drive 文件夹 token |
 | `--if-exists` | 否 | enum | 远端文件已存在时的策略：`skip`（**默认**，安全）/ `smart`（用于重复增量同步；当远端 `modified_time` 已匹配或更新时跳过上传，否则继续走覆盖路径）/ `overwrite`（依赖灰度后端协议，详见"覆盖语义"） |
+| `--if-exists` | 否 | enum | 远端文件已存在时的策略：`skip`（**默认**，安全）/ `smart`（用于重复增量同步；当远端 `modified_time` 已匹配或更新时跳过上传，否则继续走覆盖路径）/ `overwrite`（依赖灰度后端协议，详见"覆盖语义"） |
 | `--on-duplicate-remote` | 否 | enum | 云端多个条目映射到同一个 `rel_path` 时的策略：`fail`（默认）；如果冲突全是 `type=file`，还可选 `newest` / `oldest` |
 | `--delete-remote` | 否 | bool | 删除云端本地不存在的文件（文件级镜像；**不会**清理远端只有的目录）；**必须配合 `--yes`**，且 Validate 阶段会动态检查 `space:document:delete` scope |
 | `--yes` | 否 | bool | 确认 `--delete-remote`；不传时该破坏性操作在 Validate 阶段被拒绝 |
@@ -76,12 +77,14 @@ lark-cli drive +push --local-dir ./repo --folder-token fldcnxxxxxxxxx \
 - **只上传 / 覆盖 / 删除 Drive `type=file`**。在线文档（`docx` / `sheet` / `bitable` / `mindnote` / `slides`）和快捷方式（`shortcut`）即使在同一 rel_path 下出现，也不会被覆盖或删除 —— 它们没有等价的本地二进制。
 - **本地目录结构整体被镜像**：所有子目录（含**空目录**）会按需在 Drive 上 `create_folder`；同名远端目录复用其 token，不重建。空目录不计入 `summary.uploaded`，但会在 `items[]` 里以 `folder_created` 形式留痕。
 - 已存在的远端文件按 `--if-exists` 决定 `overwrite` / `smart` / `skip`。其中 `smart` 是**增量优化模式**：只要远端 `modified_time` 在同等时间精度下已经等于或晚于本地 mtime，就跳过上传；时间戳缺失/非法时会退回安全路径继续上传，不会盲跳。**但如果远端更旧，`smart` 会继续走和 `overwrite` 相同的覆盖路径，因此也继承同样的 rollout / version 返回 caveat。** 想做 `keep-both` 这类的仍需自行改名再 push。
+- 已存在的远端文件按 `--if-exists` 决定 `overwrite` / `smart` / `skip`。其中 `smart` 是**增量优化模式**：只要远端 `modified_time` 在同等时间精度下已经等于或晚于本地 mtime，就跳过上传；时间戳缺失/非法时会退回安全路径继续上传，不会盲跳。**但如果远端更旧，`smart` 会继续走和 `overwrite` 相同的覆盖路径，因此也继承同样的 rollout / version 返回 caveat。** 想做 `keep-both` 这类的仍需自行改名再 push。
 - 云端同名冲突默认失败；只有“冲突全是 `type=file`”且传了 `--on-duplicate-remote newest|oldest` 时才会选择一个远端文件继续。启用 `--delete-remote` 时，未被选中的 duplicate sibling 也会被删除，最终远端只保留一个被选中的文件副本；只有在 `--if-exists=overwrite` 成功时，才能保证该副本内容与本地对齐。
 
 ## 覆盖语义
 
 `--if-exists=overwrite` 走 `POST /open-apis/drive/v1/files/upload_all`，并在 form 中带上现有文件的 `file_token`，由后端原地更新内容并返回新版本号。`items[].version` 字段会回填该版本号。
 
+`--if-exists=smart` 是给“重复跑同步”的场景增加的增量优化：当远端 `modified_time` 在同等时间精度下已经等于或晚于本地 mtime 时，命令会把该文件计为 `skipped`；时间戳缺失、非法或更旧时，则继续走正常上传/覆盖路径。**也就是说，只要 smart 判定“远端不够新”，它就会进入与 `--if-exists=overwrite` 相同的覆盖实现，因此在未 rollout version 字段的 tenant 上仍可能非零失败。**
 `--if-exists=smart` 是给“重复跑同步”的场景增加的增量优化：当远端 `modified_time` 在同等时间精度下已经等于或晚于本地 mtime 时，命令会把该文件计为 `skipped`；时间戳缺失、非法或更旧时，则继续走正常上传/覆盖路径。**也就是说，只要 smart 判定“远端不够新”，它就会进入与 `--if-exists=overwrite` 相同的覆盖实现，因此在未 rollout version 字段的 tenant 上仍可能非零失败。**
 
 > **为什么默认是 `skip` 而不是 `overwrite`：** `upload_all` 接受 `file_token` 字段、并在响应里返回 `version` 是设计文档（Drive 同步盘）规定的协议；此后端尚在灰度发布。在还未开通该字段的 tenant 上，`--if-exists=overwrite` 会因"无 version 返回"而把对应文件标成 `failed`，整次 `+push` 也会因此非零退出。所以默认值故意定为 `skip`：第一次往一个已经有内容的目录里 push，不会因为协议没到位就把整次运行打挂；要真的覆盖远端，必须显式带 `--if-exists overwrite`。新建上传不依赖该字段，不受影响。
@@ -128,6 +131,7 @@ lark-cli drive +push --local-dir ./repo --folder-token fldcnxxxxxxxxx \
 
 ## 性能注意
 
+- 默认 `skip` 下，已存在的远端文件一律不碰；`overwrite` 下，重复跑会重传所有命中的同名文件；`smart` 下会按 `modified_time` 跳过已对齐的远端文件，但对“远端更旧”的文件仍会进入覆盖路径，因此它减少的是**不必要的重传**，不是把覆盖风险完全拿掉。
 - 默认 `skip` 下，已存在的远端文件一律不碰；`overwrite` 下，重复跑会重传所有命中的同名文件；`smart` 下会按 `modified_time` 跳过已对齐的远端文件，但对“远端更旧”的文件仍会进入覆盖路径，因此它减少的是**不必要的重传**，不是把覆盖风险完全拿掉。
 - 想更精细地控制传输量，可以先 `+status` 找出 `new_local` 和 `modified`，再只对这些文件单独上传 / 覆盖；或者直接在整目录同步时使用 `--if-exists smart`。
 - 大文件会用三段式分片上传（不会把整个 body 读进内存），但本地磁盘和上行带宽需要够。
