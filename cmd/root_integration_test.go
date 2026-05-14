@@ -49,6 +49,9 @@ func buildIntegrationRootCmd(t *testing.T, f *cmdutil.Factory) *cobra.Command {
 func executeRootIntegration(t *testing.T, f *cmdutil.Factory, rootCmd *cobra.Command, args []string) int {
 	t.Helper()
 	rootCmd.SetArgs(args)
+	if err := validateCommandInvocation(rootCmd, args); err != nil {
+		return handleRootError(f, err)
+	}
 	if err := rootCmd.Execute(); err != nil {
 		return handleRootError(f, err)
 	}
@@ -502,6 +505,203 @@ func TestIntegration_Shortcut_BusinessError_OutputsEnvelope(t *testing.T) {
 			Message: "HTTP 400: Bot/User can NOT be out of the chat.",
 		},
 	})
+}
+
+func TestIntegration_UnknownShortcut_ReturnsStructuredError(t *testing.T) {
+	f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+		AppID: "e2e-unknown-shortcut", AppSecret: "secret", Brand: core.BrandFeishu,
+	})
+	rootCmd := buildIntegrationRootCmd(t, f)
+
+	code := executeRootIntegration(t, f, rootCmd, []string{"drive", "+nonexistent-thing"})
+
+	if code != output.ExitValidation {
+		t.Fatalf("exit code = %d, want %d", code, output.ExitValidation)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	env := parseEnvelope(t, stderr)
+	if env.Error == nil {
+		t.Fatal("expected error envelope detail")
+	}
+	if env.Error.Type != "unknown_shortcut" {
+		t.Fatalf("error type = %q, want unknown_shortcut", env.Error.Type)
+	}
+	if !strings.Contains(env.Error.Message, `shortcut "+nonexistent-thing" is not supported for "lark-cli drive"`) {
+		t.Fatalf("message missing unsupported shortcut context: %q", env.Error.Message)
+	}
+	if !strings.Contains(env.Error.Hint, "+upload") || !strings.Contains(env.Error.Hint, "lark-cli drive --help") {
+		t.Fatalf("hint should include available shortcuts and help command, got %q", env.Error.Hint)
+	}
+}
+
+func TestIntegration_UnknownShortcutHelp_ReturnsStructuredError(t *testing.T) {
+	f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+		AppID: "e2e-unknown-shortcut-help", AppSecret: "secret", Brand: core.BrandFeishu,
+	})
+	rootCmd := buildIntegrationRootCmd(t, f)
+
+	code := executeRootIntegration(t, f, rootCmd, []string{"drive", "+nonexistent-thing", "--help"})
+
+	if code != output.ExitValidation {
+		t.Fatalf("exit code = %d, want %d", code, output.ExitValidation)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	env := parseEnvelope(t, stderr)
+	if env.Error == nil || env.Error.Type != "unknown_shortcut" {
+		t.Fatalf("error = %#v, want type unknown_shortcut", env.Error)
+	}
+	if !strings.Contains(env.Error.Message, `shortcut "+nonexistent-thing" is not supported for "lark-cli drive"`) {
+		t.Fatalf("message missing unsupported shortcut context: %q", env.Error.Message)
+	}
+}
+
+func TestIntegration_EmptyShortcut_ReturnsStructuredError(t *testing.T) {
+	f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+		AppID: "e2e-empty-shortcut", AppSecret: "secret", Brand: core.BrandFeishu,
+	})
+	rootCmd := buildIntegrationRootCmd(t, f)
+
+	code := executeRootIntegration(t, f, rootCmd, []string{"drive", "+"})
+
+	if code != output.ExitValidation {
+		t.Fatalf("exit code = %d, want %d", code, output.ExitValidation)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	env := parseEnvelope(t, stderr)
+	if env.Error == nil || env.Error.Type != "unknown_shortcut" {
+		t.Fatalf("error = %#v, want type unknown_shortcut", env.Error)
+	}
+	if !strings.Contains(env.Error.Message, `shortcut "+" is not supported for "lark-cli drive"`) {
+		t.Fatalf("message missing empty shortcut context: %q", env.Error.Message)
+	}
+}
+
+func TestIntegration_ServiceHelpStillSucceeds(t *testing.T) {
+	for _, args := range [][]string{{"drive"}, {"drive", "--help"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+				AppID: "e2e-service-help", AppSecret: "secret", Brand: core.BrandFeishu,
+			})
+			rootCmd := buildIntegrationRootCmd(t, f)
+
+			code := executeRootIntegration(t, f, rootCmd, args)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr=%q", code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "Usage:\n  lark-cli drive [command]") {
+				t.Fatalf("stdout missing drive help, got:\n%s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestIntegration_KnownShortcutUnknownFlagKeepsExistingBehavior(t *testing.T) {
+	f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+		AppID: "e2e-shortcut-unknown-flag", AppSecret: "secret", Brand: core.BrandFeishu,
+	})
+	rootCmd := buildIntegrationRootCmd(t, f)
+
+	code := executeRootIntegration(t, f, rootCmd, []string{"drive", "+search", "--bogus"})
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "Usage:\n  lark-cli drive +search [flags]") {
+		t.Fatalf("stdout missing shortcut usage, got:\n%s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "Error: unknown flag: --bogus") {
+		t.Fatalf("stderr missing unknown flag error, got:\n%s", stderr.String())
+	}
+}
+
+func TestIntegration_UnknownTopLevelCommand_ReturnsStructuredError(t *testing.T) {
+	for _, args := range [][]string{
+		{"nonexistent-service"},
+		{"nonexistent-service", "--help"},
+		{"nonexistent-service", "+search"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+				AppID: "e2e-unknown-command", AppSecret: "secret", Brand: core.BrandFeishu,
+			})
+			rootCmd := buildIntegrationRootCmd(t, f)
+
+			code := executeRootIntegration(t, f, rootCmd, args)
+
+			if code != output.ExitValidation {
+				t.Fatalf("exit code = %d, want %d", code, output.ExitValidation)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			env := parseEnvelope(t, stderr)
+			if env.Error == nil || env.Error.Type != "unknown_command" {
+				t.Fatalf("error = %#v, want type unknown_command", env.Error)
+			}
+			if !strings.Contains(env.Error.Message, `command "nonexistent-service" is not supported for "lark-cli"`) {
+				t.Fatalf("message missing unknown command context: %q", env.Error.Message)
+			}
+			if strings.Contains(stderr.String(), "Did you mean") || strings.Contains(stderr.String(), "unknown command") {
+				t.Fatalf("stderr should not include cobra unknown-command text, got:\n%s", stderr.String())
+			}
+		})
+	}
+}
+
+func TestIntegration_RootHelpStillSucceeds(t *testing.T) {
+	for _, args := range [][]string{{}, {"--help"}} {
+		name := "no args"
+		if len(args) > 0 {
+			name = strings.Join(args, " ")
+		}
+		t.Run(name, func(t *testing.T) {
+			f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+				AppID: "e2e-root-help", AppSecret: "secret", Brand: core.BrandFeishu,
+			})
+			rootCmd := buildIntegrationRootCmd(t, f)
+
+			code := executeRootIntegration(t, f, rootCmd, args)
+
+			if code != 0 {
+				t.Fatalf("exit code = %d, want 0; stderr=%q", code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
+			}
+			if !strings.Contains(stdout.String(), "Usage:") {
+				t.Fatalf("stdout missing root help, got:\n%s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestIntegration_NonServiceTopLevelCommandStillWorks(t *testing.T) {
+	f, stdout, stderr, _ := cmdutil.TestFactory(t, &core.CliConfig{
+		AppID: "e2e-core-command", AppSecret: "secret", Brand: core.BrandFeishu,
+	})
+	rootCmd := buildIntegrationRootCmd(t, f)
+
+	code := executeRootIntegration(t, f, rootCmd, []string{"api", "--help"})
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "lark-cli api") {
+		t.Fatalf("stdout missing api help, got:\n%s", stdout.String())
+	}
 }
 
 // TestSetupNotices_ColdStart_NoNotice verifies that a missing stamp

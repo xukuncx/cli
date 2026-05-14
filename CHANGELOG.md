@@ -13,6 +13,10 @@ All notable changes to this project will be documented in this file.
 - **drive**: Add modified-time smart sync mode (#859)
 - **approval**: Add `tasks.add_sign` and `tasks.rollback` methods (#867)
 
+### Bug Fixes
+
+- **commands**: Return structured errors for unsupported top-level commands and `+shortcut` invocations instead of silently showing parent help
+
 ## [v1.0.30] - 2026-05-13
 
 ### Features

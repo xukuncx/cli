@@ -96,6 +96,9 @@ func Execute() int {
 
 	// --- Notices (non-blocking) ---
 	if !isCompletionCommand(os.Args) {
+		if err := validateCommandInvocation(rootCmd, os.Args[1:]); err != nil {
+			return handleRootError(f, err)
+		}
 		setupNotices()
 	}
 
