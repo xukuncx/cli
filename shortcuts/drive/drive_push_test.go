@@ -134,6 +134,76 @@ func TestDrivePushUploadsAndCreatesParents(t *testing.T) {
 	}
 }
 
+func TestDrivePushFiltersLocalFilesAndScopesDeleteRemoteToFilteredView(t *testing.T) {
+	f, stdout, _, reg := cmdutil.TestFactory(t, driveTestConfig())
+
+	tmpDir := t.TempDir()
+	withDriveWorkingDir(t, tmpDir)
+	if err := os.MkdirAll(filepath.Join("local", "docs"), 0o755); err != nil {
+		t.Fatalf("MkdirAll docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("local", "docs", "keep.md"), []byte("KEEP"), 0o644); err != nil {
+		t.Fatalf("WriteFile keep.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("local", "skip.txt"), []byte("SKIP"), 0o644); err != nil {
+		t.Fatalf("WriteFile skip.txt: %v", err)
+	}
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=folder_root",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{"files": []interface{}{
+				map[string]interface{}{"token": "tok_keep_remote", "name": "docs", "type": "folder"},
+				map[string]interface{}{"token": "tok_skip_remote", "name": "skip.txt", "type": "file"},
+			}, "has_more": false},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=tok_keep_remote",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{"files": []interface{}{
+				map[string]interface{}{"token": "tok_keep_existing", "name": "keep.md", "type": "file"},
+			}, "has_more": false},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    "/open-apis/drive/v1/files/upload_all",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{"file_token": "tok_uploaded", "version": "v2"},
+		},
+	})
+
+	err := mountAndRunDrive(t, DrivePush, []string{
+		"+push",
+		"--local-dir", "local",
+		"--folder-token", "folder_root",
+		"--ext", "md",
+		"--if-exists", "overwrite",
+		"--delete-remote",
+		"--yes",
+		"--as", "bot",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstdout: %s", err, stdout.String())
+	}
+	out := stdout.String()
+	if !strings.Contains(out, `"uploaded": 1`) {
+		t.Fatalf("expected uploaded=1, got: %s", out)
+	}
+	if strings.Contains(out, "skip.txt") {
+		t.Fatalf("filtered-out file should not appear in stdout: %s", out)
+	}
+	if strings.Contains(out, `"deleted_remote": 1`) {
+		t.Fatalf("filtered-out remote file must not be deleted: %s", out)
+	}
+}
+
 // TestDrivePushOverwritesWhenIfExistsOverwrite verifies that a local file
 // whose rel_path already maps to a type=file on Drive is sent through
 // upload_all with the existing file_token in the form body, and that the

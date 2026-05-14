@@ -250,6 +250,60 @@ func TestDriveStatusQuickCategorizesByModifiedTimeWithoutDownloads(t *testing.T)
 	reg.Verify(t)
 }
 
+func TestDriveStatusFiltersLocalAndRemoteByExt(t *testing.T) {
+	f, stdout, _, reg := cmdutil.TestFactory(t, driveTestConfig())
+
+	tmpDir := t.TempDir()
+	withDriveWorkingDir(t, tmpDir)
+	if err := os.MkdirAll("local", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile("local/a.md", []byte("aaa"), 0o644); err != nil {
+		t.Fatalf("WriteFile a.md: %v", err)
+	}
+	if err := os.WriteFile("local/b.txt", []byte("bbb"), 0o644); err != nil {
+		t.Fatalf("WriteFile b.txt: %v", err)
+	}
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=folder_root",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{"files": []interface{}{
+				map[string]interface{}{"token": "tok_a", "name": "a.md", "type": "file"},
+				map[string]interface{}{"token": "tok_c", "name": "c.txt", "type": "file"},
+			}, "has_more": false},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method:  "GET",
+		URL:     "/open-apis/drive/v1/files/tok_a/download",
+		Status:  200,
+		Body:    []byte("aaa"),
+		Headers: http.Header{"Content-Type": []string{"application/octet-stream"}},
+	})
+
+	err := mountAndRunDrive(t, DriveStatus, []string{
+		"+status",
+		"--local-dir", "local",
+		"--folder-token", "folder_root",
+		"--ext", "md",
+		"--as", "bot",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstdout: %s", err, stdout.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, `"a.md"`) {
+		t.Fatalf("expected a.md in status output: %s", out)
+	}
+	if strings.Contains(out, `"b.txt"`) || strings.Contains(out, `"c.txt"`) {
+		t.Fatalf("filtered-out txt files should not appear in output: %s", out)
+	}
+}
+
 // TestDriveStatusQuickMarksUntrustedTimestampAsModified locks in the
 // conservative fallback for malformed remote modified_time values.
 func TestDriveStatusQuickMarksUntrustedTimestampAsModified(t *testing.T) {

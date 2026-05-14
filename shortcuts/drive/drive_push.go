@@ -93,6 +93,9 @@ var DrivePush = common.Shortcut{
 	Flags: []common.Flag{
 		{Name: "local-dir", Desc: "local root directory (relative to cwd)", Required: true},
 		{Name: "folder-token", Desc: "target Drive folder token", Required: true},
+		{Name: "ext", Type: "string_slice", Desc: "only include files with these extensions (e.g. md,mdx)"},
+		{Name: "include", Type: "string_slice", Desc: "include only files whose rel_path matches these glob patterns"},
+		{Name: "exclude", Type: "string_slice", Desc: "exclude files whose rel_path matches these glob patterns"},
 		{Name: "if-exists", Desc: "policy when a Drive file already exists at the same rel_path (skip = never touch existing remote files; smart = skip when remote modified_time already matches or is newer, otherwise fall through to overwrite semantics; overwrite = always replace)", Default: drivePushIfExistsSkip, Enum: []string{drivePushIfExistsOverwrite, drivePushIfExistsSmart, drivePushIfExistsSkip}},
 		{Name: "on-duplicate-remote", Desc: "policy when multiple remote Drive entries map to the same rel_path", Default: driveDuplicateRemoteFail, Enum: []string{driveDuplicateRemoteFail, driveDuplicateRemoteNewest, driveDuplicateRemoteOldest}},
 		{Name: "delete-remote", Type: "bool", Desc: "delete Drive files absent locally (file-level mirror; remote-only directories are not removed); requires --yes"},
@@ -107,6 +110,7 @@ var DrivePush = common.Shortcut{
 		"--delete-remote requires --yes; without --yes the command is rejected upfront so a stray flag never deletes anything.",
 		"--delete-remote --yes also requires the space:document:delete scope. Validate runs a dynamic pre-flight check when the flag is on, so a missing grant fails the run before any upload — preventing a half-synced state where files were uploaded but the cleanup pass cannot delete.",
 		"Item-level failures (upload, overwrite, folder, delete) bump summary.failed and the run exits non-zero. If any upload or folder step fails, the --delete-remote phase is skipped entirely so a partial upload never triggers remote deletion.",
+		"Filter precedence is CLI flags (--ext/--include/--exclude) > .larkignore > built-in excludes such as .git/ and .lark-sync/.",
 	},
 	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		localDir := strings.TrimSpace(runtime.Str("local-dir"))
@@ -150,6 +154,9 @@ var DrivePush = common.Shortcut{
 				return err
 			}
 		}
+		if _, err := buildDriveSyncFilter(runtime, localDir); err != nil {
+			return err
+		}
 		return nil
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
@@ -174,6 +181,10 @@ var DrivePush = common.Shortcut{
 			duplicateRemote = driveDuplicateRemoteFail
 		}
 		deleteRemote := runtime.Bool("delete-remote")
+		filter, err := buildDriveSyncFilter(runtime, localDir)
+		if err != nil {
+			return err
+		}
 
 		// Resolve --local-dir to its canonical absolute path before walking.
 		// SafeInputPath fully evaluates symlinks across the entire path,
@@ -193,16 +204,18 @@ var DrivePush = common.Shortcut{
 		}
 
 		fmt.Fprintf(runtime.IO().ErrOut, "Walking local: %s\n", localDir)
-		localFiles, localDirs, err := drivePushWalkLocal(safeRoot, cwdCanonical)
+		localFiles, walkedDirs, err := drivePushWalkLocal(safeRoot, cwdCanonical)
 		if err != nil {
 			return err
 		}
+		localFiles, localDirs := filterDrivePushLocalView(localFiles, walkedDirs, filter)
 
 		fmt.Fprintf(runtime.IO().ErrOut, "Listing Drive folder: %s\n", common.MaskToken(folderToken))
 		entries, err := listRemoteFolderEntries(ctx, runtime, folderToken, "")
 		if err != nil {
 			return err
 		}
+		entries = filterDriveRemoteEntries(entries, filter)
 		if duplicates := blockingRemotePathConflicts(entries, duplicateRemote); len(duplicates) > 0 {
 			return duplicateRemotePathError(duplicates)
 		}

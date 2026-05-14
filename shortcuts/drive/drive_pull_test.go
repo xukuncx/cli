@@ -106,6 +106,60 @@ func TestDrivePullDownloadsAndCreatesParents(t *testing.T) {
 	mustReadFile(t, filepath.Join("local", "sub", "b.txt"), "BBB")
 }
 
+func TestDrivePullFiltersRemoteFilesAndScopesDeleteLocalToFilteredView(t *testing.T) {
+	f, stdout, _, reg := cmdutil.TestFactory(t, driveTestConfig())
+
+	tmpDir := t.TempDir()
+	withDriveWorkingDir(t, tmpDir)
+	if err := os.MkdirAll("local", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("local", "keep.md"), []byte("old"), 0o644); err != nil {
+		t.Fatalf("WriteFile keep.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("local", "skip.txt"), []byte("stay"), 0o644); err != nil {
+		t.Fatalf("WriteFile skip.txt: %v", err)
+	}
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=folder_root",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{"files": []interface{}{
+				map[string]interface{}{"token": "tok_keep", "name": "keep.md", "type": "file"},
+				map[string]interface{}{"token": "tok_skip", "name": "skip.txt", "type": "file"},
+			}, "has_more": false},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method:  "GET",
+		URL:     "/open-apis/drive/v1/files/tok_keep/download",
+		Status:  200,
+		Body:    []byte("new-md"),
+		Headers: http.Header{"Content-Type": []string{"application/octet-stream"}},
+	})
+
+	err := mountAndRunDrive(t, DrivePull, []string{
+		"+pull",
+		"--local-dir", "local",
+		"--folder-token", "folder_root",
+		"--ext", "md",
+		"--delete-local",
+		"--yes",
+		"--as", "bot",
+	}, f, stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v\nstdout: %s", err, stdout.String())
+	}
+	mustReadFile(t, filepath.Join("local", "keep.md"), "new-md")
+	mustReadFile(t, filepath.Join("local", "skip.txt"), "stay")
+	out := stdout.String()
+	if strings.Contains(out, "skip.txt") {
+		t.Fatalf("filtered-out file should not appear in stdout: %s", out)
+	}
+}
+
 // TestDrivePullSkipsExistingWhenSkipPolicy verifies --if-exists=skip leaves
 // existing local files untouched and counts them under summary.skipped.
 func TestDrivePullSkipsExistingWhenSkipPolicy(t *testing.T) {

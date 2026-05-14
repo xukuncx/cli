@@ -70,6 +70,35 @@ func TestDrive_PushDryRun(t *testing.T) {
 	}
 }
 
+func TestDrive_PushDryRunAcceptsFilterFlags(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", t.TempDir())
+	t.Setenv("LARKSUITE_CLI_APP_ID", "app")
+	t.Setenv("LARKSUITE_CLI_APP_SECRET", "secret")
+	t.Setenv("LARKSUITE_CLI_BRAND", "feishu")
+
+	workDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "local"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "local", ".larkignore"), []byte("*.tmp\n"), 0o644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+	result, err := clie2e.RunCmd(ctx, clie2e.Request{
+		Args: []string{
+			"drive", "+push",
+			"--local-dir", "local",
+			"--folder-token", "fldcnE2E001",
+			"--ext", "md,mdx",
+			"--include", "docs/**",
+			"--exclude", "docs/private/**",
+			"--dry-run",
+		},
+		WorkDir:   workDir,
+		DefaultAs: "user",
+	})
+	require.NoError(t, err)
+	result.AssertExitCode(t, 0)
+}
+
 // TestDrive_PushDryRunRejectsAbsoluteLocalDir confirms the path validator
 // runs in the real binary's Validate stage and surfaces a structured error
 // referencing --local-dir.

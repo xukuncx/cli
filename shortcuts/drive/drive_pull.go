@@ -72,6 +72,9 @@ var DrivePull = common.Shortcut{
 	Flags: []common.Flag{
 		{Name: "local-dir", Desc: "local root directory (relative to cwd)", Required: true},
 		{Name: "folder-token", Desc: "source Drive folder token", Required: true},
+		{Name: "ext", Type: "string_slice", Desc: "only include files with these extensions (e.g. md,mdx)"},
+		{Name: "include", Type: "string_slice", Desc: "include only files whose rel_path matches these glob patterns"},
+		{Name: "exclude", Type: "string_slice", Desc: "exclude files whose rel_path matches these glob patterns"},
 		{Name: "if-exists", Desc: "policy when a local file already exists (skip = never touch existing files; smart = skip when local mtime is already up to date; overwrite = always replace)", Default: drivePullIfExistsOverwrite, Enum: []string{drivePullIfExistsOverwrite, drivePullIfExistsSmart, drivePullIfExistsSkip}},
 		{Name: "on-duplicate-remote", Desc: "policy when multiple remote Drive entries map to the same rel_path", Default: driveDuplicateRemoteFail, Enum: []string{driveDuplicateRemoteFail, driveDuplicateRemoteRename, driveDuplicateRemoteNewest, driveDuplicateRemoteOldest}},
 		{Name: "delete-local", Type: "bool", Desc: "delete local regular files absent from Drive (file-level mirror; empty directories are NOT pruned); requires --yes"},
@@ -83,6 +86,7 @@ var DrivePull = common.Shortcut{
 		"For repeat syncs, --if-exists=smart is the recommended best-effort incremental mode: it compares local mtime with Drive modified_time and skips downloads when the local copy is already up to date.",
 		"Duplicate remote rel_path conflicts fail by default. Use --on-duplicate-remote=rename to download duplicate files with stable hashed suffixes.",
 		"--delete-local requires --yes; without --yes the command is rejected upfront so a stray flag never deletes anything.",
+		"Filter precedence is CLI flags (--ext/--include/--exclude) > .larkignore > built-in excludes such as .git/ and .lark-sync/.",
 	},
 	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		localDir := strings.TrimSpace(runtime.Str("local-dir"))
@@ -109,6 +113,9 @@ var DrivePull = common.Shortcut{
 		if runtime.Bool("delete-local") && !runtime.Bool("yes") {
 			return output.ErrValidation("--delete-local requires --yes (high-risk: deletes local files absent from Drive)")
 		}
+		if _, err := buildDriveSyncFilter(runtime, localDir); err != nil {
+			return err
+		}
 		return nil
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
@@ -129,6 +136,10 @@ var DrivePull = common.Shortcut{
 			duplicateRemote = driveDuplicateRemoteFail
 		}
 		deleteLocal := runtime.Bool("delete-local")
+		filter, err := buildDriveSyncFilter(runtime, localDir)
+		if err != nil {
+			return err
+		}
 
 		// Resolve --local-dir to its canonical absolute path before we
 		// touch the filesystem. SafeInputPath fully evaluates symlinks
@@ -162,6 +173,7 @@ var DrivePull = common.Shortcut{
 		if err != nil {
 			return err
 		}
+		entries = filterDriveRemoteEntries(entries, filter)
 		if duplicates := blockingRemotePathConflicts(entries, duplicateRemote); len(duplicates) > 0 {
 			return duplicateRemotePathError(duplicates)
 		}
@@ -245,6 +257,10 @@ var DrivePull = common.Shortcut{
 			// path resolution cannot redirect the delete to a file
 			// outside the canonical subtree.
 			localAbsPaths, err := drivePullWalkLocal(safeRoot)
+			if err != nil {
+				return err
+			}
+			localAbsPaths, err = filterDrivePullLocalAbsPaths(safeRoot, localAbsPaths, filter)
 			if err != nil {
 				return err
 			}

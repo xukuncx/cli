@@ -83,7 +83,6 @@ func TestDrive_StatusDryRunQuick(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
-
 	result, err := clie2e.RunCmd(ctx, clie2e.Request{
 		Args: []string{
 			"drive", "+status",
@@ -112,6 +111,36 @@ func TestDrive_StatusDryRunQuick(t *testing.T) {
 	if !strings.Contains(desc, "modified_time") || strings.Contains(desc, "SHA-256") {
 		t.Fatalf("quick description must mention modified_time and skip SHA-256 wording, got %q\nstdout:\n%s", desc, out)
 	}
+}
+
+func TestDrive_StatusDryRunAcceptsFilterFlags(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", t.TempDir())
+	t.Setenv("LARKSUITE_CLI_APP_ID", "app")
+	t.Setenv("LARKSUITE_CLI_APP_SECRET", "secret")
+	t.Setenv("LARKSUITE_CLI_BRAND", "feishu")
+
+	workDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "local"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "local", ".larkignore"), []byte("*.tmp\n"), 0o644))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	result, err := clie2e.RunCmd(ctx, clie2e.Request{
+		Args: []string{
+			"drive", "+status",
+			"--local-dir", "local",
+			"--folder-token", "fldcnE2E001",
+			"--ext", "md",
+			"--include", "docs/**",
+			"--exclude", "docs/private/**",
+			"--dry-run",
+		},
+		WorkDir:   workDir,
+		DefaultAs: "user",
+	})
+	require.NoError(t, err)
+	result.AssertExitCode(t, 0)
 }
 
 // TestDrive_StatusDryRunRejectsAbsoluteLocalDir confirms that the

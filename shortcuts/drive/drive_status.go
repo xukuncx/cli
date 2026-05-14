@@ -65,11 +65,15 @@ var DriveStatus = common.Shortcut{
 		{Name: "local-dir", Desc: "local root directory (relative to cwd)", Required: true},
 		{Name: "folder-token", Desc: "Drive folder token", Required: true},
 		{Name: "quick", Type: "bool", Desc: "compare modified_time only and skip remote downloads for files present on both sides"},
+		{Name: "ext", Type: "string_slice", Desc: "only include files with these extensions (e.g. md,mdx)"},
+		{Name: "include", Type: "string_slice", Desc: "include only files whose rel_path matches these glob patterns"},
+		{Name: "exclude", Type: "string_slice", Desc: "exclude files whose rel_path matches these glob patterns"},
 	},
 	Tips: []string{
 		"Only entries with type=file are compared; online docs (docx, sheet, bitable, mindnote, slides) and shortcuts are skipped.",
 		"Default detection=exact downloads files present on both sides and SHA-256 hashes them in memory; expect noticeable I/O on large folders.",
 		"Pass --quick for the recommended fast preflight mode: it compares local mtime with Drive modified_time, skips remote downloads, and reports detection=quick as a best-effort diff.",
+		"Filter precedence is CLI flags (--ext/--include/--exclude) > .larkignore > built-in excludes such as .git/ and .lark-sync/.",
 	},
 	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		localDir := strings.TrimSpace(runtime.Str("local-dir"))
@@ -109,6 +113,9 @@ var DriveStatus = common.Shortcut{
 				return err
 			}
 		}
+		if _, err := buildDriveSyncFilter(runtime, localDir); err != nil {
+			return err
+		}
 		return nil
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
@@ -127,6 +134,10 @@ var DriveStatus = common.Shortcut{
 		detection := driveStatusDetectionExact
 		if runtime.Bool("quick") {
 			detection = driveStatusDetectionQuick
+		}
+		filter, err := buildDriveSyncFilter(runtime, localDir)
+		if err != nil {
+			return err
 		}
 
 		// Resolve --local-dir to its canonical absolute path before walking.
@@ -156,12 +167,14 @@ var DriveStatus = common.Shortcut{
 		if err != nil {
 			return err
 		}
+		localFiles = filterDriveStatusLocalFiles(localFiles, filter)
 
 		fmt.Fprintf(runtime.IO().ErrOut, "Listing Drive folder: %s\n", common.MaskToken(folderToken))
 		entries, err := listRemoteFolderEntries(ctx, runtime, folderToken, "")
 		if err != nil {
 			return err
 		}
+		entries = filterDriveRemoteEntries(entries, filter)
 		if duplicates := duplicateRemoteFilePaths(entries); len(duplicates) > 0 {
 			return duplicateRemotePathError(duplicates)
 		}
