@@ -1371,6 +1371,55 @@ func TestDrivePushOverwriteNestedFileUsesParentFolderToken(t *testing.T) {
 	}
 }
 
+func TestDrivePushOverwriteNestedFileReportsParentEnsureFailure(t *testing.T) {
+	f, stdout, _, reg := cmdutil.TestFactory(t, driveTestConfig())
+
+	tmpDir := t.TempDir()
+	withDriveWorkingDir(t, tmpDir)
+	if err := os.MkdirAll(filepath.Join("local", "sub"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join("local", "sub", "keep.txt"), []byte("local"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	reg.Register(&httpmock.Stub{
+		Method: "GET",
+		URL:    "folder_token=folder_root",
+		Body: map[string]interface{}{
+			"code": 0, "msg": "ok",
+			"data": map[string]interface{}{
+				"files": []interface{}{
+					map[string]interface{}{"token": "tok_keep_nested", "name": "sub/keep.txt", "type": "file"},
+				},
+				"has_more": false,
+			},
+		},
+	})
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    "/open-apis/drive/v1/files/create_folder",
+		Body: map[string]interface{}{
+			"code": 9999,
+			"msg":  "create parent failed",
+		},
+	})
+
+	err := mountAndRunDrive(t, DrivePush, []string{
+		"+push",
+		"--local-dir", "local",
+		"--folder-token", "folder_root",
+		"--if-exists", "overwrite",
+		"--as", "bot",
+	}, f, stdout)
+	if err == nil {
+		t.Fatalf("expected parent ensure failure\nstdout: %s", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"action": "failed"`) || !strings.Contains(stdout.String(), "create parent failed") {
+		t.Fatalf("expected failed item with create_folder error, got: %s", stdout.String())
+	}
+}
+
 // TestDrivePushMirrorsEmptyDirectories confirms the gap codex review
 // flagged: a local directory with no files inside must still surface on
 // Drive as a created sub-folder, not be silently dropped because the

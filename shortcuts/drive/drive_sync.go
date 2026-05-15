@@ -193,6 +193,10 @@ var DriveSync = common.Shortcut{
 		fmt.Fprintf(runtime.IO().ErrOut, "Diff: %d new_local, %d new_remote, %d modified, %d unchanged (detection=%s)\n",
 			len(newLocal), len(newRemote), len(modified), len(unchanged), detection)
 
+		if onConflict == driveSyncOnConflictAsk && len(modified) > 0 && runtime.IO().In == nil {
+			return output.ErrValidation("--on-conflict=ask requires interactive stdin when modified files exist")
+		}
+
 		// --- Phase 2: Execute sync operations ---
 		var pulled, pushed, skipped, failed int
 		items := make([]driveSyncItem, 0)
