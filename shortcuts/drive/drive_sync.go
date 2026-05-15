@@ -305,7 +305,7 @@ var DriveSync = common.Shortcut{
 						existingToken = chosen.FileToken
 					}
 				}
-				parentToken, parentErr := drivePushEnsureParentToken(ctx, runtime, folderToken, entry.RelPath, folderCache)
+				parentToken, parentErr := drivePushEnsureFolder(ctx, runtime, folderToken, drivePushParentRel(entry.RelPath), folderCache)
 				if parentErr != nil {
 					items = append(items, driveSyncItem{RelPath: entry.RelPath, FileToken: existingToken, Action: "failed", Direction: "push", Error: parentErr.Error()})
 					failed++
