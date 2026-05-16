@@ -1,0 +1,205 @@
+// Copyright (c) 2026 Lark Technologies Pte. Ltd.
+// SPDX-License-Identifier: MIT
+
+package sheets
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/larksuite/cli/shortcuts/common"
+)
+
+func TestWriteCellsShortcuts_DryRun(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		sc        common.Shortcut
+		args      []string
+		toolName  string
+		wantInput map[string]interface{}
+	}{
+		{
+			name: "+cells-set with --data cells passthrough",
+			sc:   CellsSet,
+			args: []string{
+				"--url", testURL, "--sheet-id", testSheetID,
+				"--range", "A1:B2",
+				"--data", `{"cells":[[{"value":1},{"value":2}],[{"value":3},{"value":4}]]}`,
+			},
+			toolName: "set_cell_range",
+			wantInput: map[string]interface{}{
+				"excel_id": testToken,
+				"sheet_id": testSheetID,
+				"range":    "A1:B2",
+				"cells":    []interface{}{[]interface{}{map[string]interface{}{"value": float64(1)}, map[string]interface{}{"value": float64(2)}}, []interface{}{map[string]interface{}{"value": float64(3)}, map[string]interface{}{"value": float64(4)}}},
+			},
+		},
+		{
+			name: "+cells-set --allow-overwrite=false sends false explicitly",
+			sc:   CellsSet,
+			args: []string{
+				"--url", testURL, "--sheet-id", testSheetID,
+				"--range", "A1",
+				"--data", `{"cells":[[{"value":1}]]}`,
+				"--allow-overwrite=false",
+			},
+			toolName: "set_cell_range",
+			wantInput: map[string]interface{}{
+				"excel_id":        testToken,
+				"sheet_id":        testSheetID,
+				"range":           "A1",
+				"allow_overwrite": false,
+			},
+		},
+		{
+			name: "+csv-put inline csv",
+			sc:   CsvPut,
+			args: []string{
+				"--url", testURL, "--sheet-id", testSheetID,
+				"--csv", "a,b,c\n1,2,3",
+				"--start-cell", "B3",
+			},
+			toolName: "set_range_from_csv",
+			wantInput: map[string]interface{}{
+				"excel_id":   testToken,
+				"sheet_id":   testSheetID,
+				"csv":        "a,b,c\n1,2,3",
+				"start_cell": "B3",
+			},
+		},
+		{
+			name: "+dropdown-set fans out cells matrix",
+			sc:   DropdownSet,
+			args: []string{
+				"--url", testURL, "--sheet-id", testSheetID,
+				"--range", "A2:A4",
+				"--options", `["a","b"]`,
+				"--multiple", "--highlight",
+			},
+			toolName: "set_cell_range",
+			wantInput: map[string]interface{}{
+				"excel_id": testToken,
+				"sheet_id": testSheetID,
+				"range":    "A2:A4",
+			},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			body := parseDryRunBody(t, tt.sc, tt.args)
+			got := decodeToolInput(t, body, tt.toolName)
+			assertInputEquals(t, got, tt.wantInput)
+		})
+	}
+}
+
+// TestDropdownSet_CellsShape inspects the 3×1 matrix produced from
+// --range A2:A4 to confirm the data_validation prototype is replicated.
+func TestDropdownSet_CellsShape(t *testing.T) {
+	t.Parallel()
+	body := parseDryRunBody(t, DropdownSet, []string{
+		"--url", testURL, "--sheet-id", testSheetID,
+		"--range", "A2:A4", "--options", `["a","b"]`, "--multiple",
+	})
+	input := decodeToolInput(t, body, "set_cell_range")
+	cells, _ := input["cells"].([]interface{})
+	if len(cells) != 3 {
+		t.Fatalf("cells rows = %d, want 3 (A2:A4)", len(cells))
+	}
+	for i, row := range cells {
+		r, _ := row.([]interface{})
+		if len(r) != 1 {
+			t.Errorf("row %d cols = %d, want 1", i, len(r))
+		}
+		cell, _ := r[0].(map[string]interface{})
+		dv, _ := cell["data_validation"].(map[string]interface{})
+		if dv == nil {
+			t.Errorf("row %d cell missing data_validation: %#v", i, cell)
+			continue
+		}
+		if dv["type"] != "list" {
+			t.Errorf("row %d data_validation.type = %v, want list", i, dv["type"])
+		}
+		if dv["multiple_values"] != true {
+			t.Errorf("row %d data_validation.multiple_values = %v, want true", i, dv["multiple_values"])
+		}
+	}
+}
+
+// TestCellsSetStyle_FanOutsBorderStylesOut confirms the border_styles
+// field is split out of --style and placed as a sibling of cell_styles
+// per the tool contract.
+func TestCellsSetStyle_FanOutsBorderStylesOut(t *testing.T) {
+	t.Parallel()
+	body := parseDryRunBody(t, CellsSetStyle, []string{
+		"--url", testURL, "--sheet-id", testSheetID,
+		"--range", "A1:B1",
+		"--style", `{"font":{"bold":true},"border_styles":{"top":{"style":"thick"}}}`,
+	})
+	input := decodeToolInput(t, body, "set_cell_range")
+	cells, _ := input["cells"].([]interface{})
+	row, _ := cells[0].([]interface{})
+	cell, _ := row[0].(map[string]interface{})
+	if cell["border_styles"] == nil {
+		t.Fatalf("border_styles missing on cell: %#v", cell)
+	}
+	style, _ := cell["cell_styles"].(map[string]interface{})
+	if _, leaked := style["border_styles"]; leaked {
+		t.Errorf("border_styles leaked into cell_styles: %#v", style)
+	}
+}
+
+func TestCellsSet_RequiresCellsField(t *testing.T) {
+	t.Parallel()
+	stdout, stderr, err := runShortcutCapturingErr(t, CellsSet, []string{
+		"--url", testURL, "--sheet-id", testSheetID,
+		"--range", "A1", "--data", `{"foo":"bar"}`, "--dry-run",
+	})
+	if err == nil {
+		t.Fatalf("expected validation error; stdout=%s stderr=%s", stdout, stderr)
+	}
+	if !strings.Contains(stdout+stderr+err.Error(), "must include a \"cells\" field") {
+		t.Errorf("expected cells-field guard; got=%s|%s|%v", stdout, stderr, err)
+	}
+}
+
+// TestRangeDimensions exercises the A1 parser's corner cases used by
+// cells-set-style / dropdown-set / dim-resize.
+func TestRangeDimensions(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in        string
+		wantRows  int
+		wantCols  int
+		wantErr   bool
+	}{
+		{"A1", 1, 1, false},
+		{"A1:B2", 2, 2, false},
+		{"sheet1!C3:E10", 8, 3, false},
+		{"A:C", 0, 0, true},   // whole column not supported
+		{"3:6", 0, 0, true},   // whole row not supported
+		{"B2:A1", 0, 0, true}, // end before start
+		{"", 0, 0, true},
+	}
+	var unusedSheet common.Shortcut = CellsSet // touch the common import
+	_ = unusedSheet
+	for _, c := range cases {
+		rows, cols, err := rangeDimensions(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("rangeDimensions(%q): want error, got rows=%d cols=%d", c.in, rows, cols)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("rangeDimensions(%q) unexpected error: %v", c.in, err)
+		}
+		if rows != c.wantRows || cols != c.wantCols {
+			t.Errorf("rangeDimensions(%q) = (%d,%d), want (%d,%d)", c.in, rows, cols, c.wantRows, c.wantCols)
+		}
+	}
+}
