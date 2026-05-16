@@ -55,5 +55,14 @@ func Shortcuts() []common.Shortcut {
 		RangeCopy,
 		RangeFill,
 		RangeSort,
+
+		// Object list (one read shortcut per object skill)
+		ChartList,
+		PivotList,
+		CondFormatList,
+		FilterList,
+		FilterViewList,
+		SparklineList,
+		FloatImageList,
 	}
 }
