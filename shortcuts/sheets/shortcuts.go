@@ -79,5 +79,11 @@ func Shortcuts() []common.Shortcut {
 		CellsBatchSetStyle,
 		DropdownUpdate,
 		DropdownDelete,
+
+		// cli-only (legacy OAPI direct calls)
+		WorkbookCreate,
+		WorkbookExport,
+		DimMove,
+		CellsSetImage,
 	}
 }
