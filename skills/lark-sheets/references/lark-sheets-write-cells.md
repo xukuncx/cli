@@ -175,8 +175,6 @@ set_cell_range — range="A11:H11", cells=[[
 |  | `+cells-set-style` | write | 单元格 |
 |  | `+cells-set-image` | write | 单元格 |
 |  | `+dropdown-set` | write | 对象 |
-|  | `+dropdown-update` | write | 对象 |
-|  | `+dropdown-delete` | high-risk-write | 对象 |
 | `set_range_from_csv` | `+csv-put` | write | 单元格 |
 | `import_sandbox_to_sheet` | _Sheet Tool 独有，CLI 不实现_ | — | — |
 
@@ -238,29 +236,6 @@ set_cell_range — range="A11:H11", cells=[[
 | `--highlight` | 专有 | bool | 否 | 选项配色显示；默认 `false` |
 | `--dry-run` | 系统 | bool | 否 |  |
 
-### `+dropdown-update`
-
-| Flag | 分类 | Type | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
-| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
-| `--ranges` | 专有 | string + File + Stdin | 是 | 目标范围 JSON 数组（如 `["sheet1!A2:A100"]`），每项必须带 sheet 前缀 |
-| `--options` | 专有 | string + File + Stdin | 是 | 选项 JSON 数组 |
-| `--colors` | 专有 | string + File + Stdin | 否 | 颜色数组（与 `--options` 等长） |
-| `--multiple` | 专有 | bool | 否 | 启用多选 |
-| `--highlight` | 专有 | bool | 否 | 选项配色 |
-| `--dry-run` | 系统 | bool | 否 |  |
-
-### `+dropdown-delete`
-
-| Flag | 分类 | Type | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
-| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
-| `--ranges` | 专有 | string + File + Stdin | 是 | 目标范围 JSON 数组（最多 100 个，每项带 sheet 前缀） |
-| `--yes` | 系统 | bool | 是 | `high-risk-write`，必须二次确认（不带时退出码 10） |
-| `--dry-run` | 系统 | bool | 否 |  |
-
 ### `+csv-put`
 
 | Flag | 分类 | Type | 必填 | 说明 |
@@ -307,7 +282,7 @@ _单元格样式属性，包括字体、颜色、对齐方式和数字格式_
 - `vertical_alignment` (enum?) — 垂直对齐方式 [top / middle / bottom]
 - `word_wrap` (enum?) — 是否自动换行，默认溢出，可选自动换行或裁剪 [overflow / auto-wrap / word-clip]
 
-### `+dropdown-set` `--options` / `+dropdown-update` `--options`
+### `+dropdown-set` `--options`
 
 _数据验证配置_
 

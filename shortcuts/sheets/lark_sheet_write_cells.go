@@ -384,190 +384,10 @@ func dropdownSetInput(runtime *common.RuntimeContext, token, sheetID, sheetName 
 	return input, nil
 }
 
-// DropdownUpdate replaces (or installs) dropdowns on multiple ranges via
-// sequential set_cell_range calls. Sheet ids are derived from the per-range
-// sheet prefix; the public --sheet-id / --sheet-name flags are not used here.
-var DropdownUpdate = common.Shortcut{
-	Service:     "sheets",
-	Command:     "+dropdown-update",
-	Description: "Update dropdown configuration across multiple sheet-prefixed ranges.",
-	Risk:        "write",
-	Scopes:      []string{"sheets:spreadsheet:write_only"},
-	AuthTypes:   []string{"user", "bot"},
-	HasFormat:   true,
-	Flags: append(publicTokenFlags(),
-		common.Flag{Name: "ranges", Input: []string{common.File, common.Stdin}, Required: true,
-			Desc: "JSON array of sheet-prefixed A1 ranges (e.g. [\"sheet1!A2:A100\"])"},
-		common.Flag{Name: "options", Input: []string{common.File, common.Stdin}, Required: true, Desc: "options JSON array"},
-		common.Flag{Name: "colors", Input: []string{common.File, common.Stdin}, Desc: "optional hex color array (must equal --options length)"},
-		common.Flag{Name: "multiple", Type: "bool", Desc: "enable multi-select"},
-		common.Flag{Name: "highlight", Type: "bool", Desc: "color-highlight options"},
-	),
-	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
-		if _, err := resolveSpreadsheetToken(runtime); err != nil {
-			return err
-		}
-		if _, err := validateDropdownRanges(runtime); err != nil {
-			return err
-		}
-		if _, err := validateDropdownOptionsColors(runtime); err != nil {
-			return err
-		}
-		return nil
-	},
-	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
-		token, _ := resolveSpreadsheetToken(runtime)
-		validation, _ := buildDropdownValidation(runtime)
-		ranges, _ := validateDropdownRanges(runtime)
-		dry := common.NewDryRunAPI()
-		for _, rng := range ranges {
-			sheet, sub, _ := splitSheetPrefixedRange(rng)
-			rows, cols, _ := rangeDimensions(sub)
-			cells := fillCellsMatrix(rows, cols, map[string]interface{}{"data_validation": validation})
-			body, _ := buildToolBody("set_cell_range", map[string]interface{}{
-				"excel_id":   token,
-				"range":      sub,
-				"sheet_name": sheet,
-				"cells":      cells,
-			})
-			dry.POST(toolInvokePath(token, ToolKindWrite)).Body(body)
-		}
-		return dry.
-			Set("spreadsheet_token", token).
-			Set("tool_name", "set_cell_range").
-			Set("invocation_count", len(ranges))
-	},
-	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
-		token, err := resolveSpreadsheetToken(runtime)
-		if err != nil {
-			return err
-		}
-		validation, err := buildDropdownValidation(runtime)
-		if err != nil {
-			return err
-		}
-		ranges, err := validateDropdownRanges(runtime)
-		if err != nil {
-			return err
-		}
-		results := make([]interface{}, 0, len(ranges))
-		for _, rng := range ranges {
-			sheet, sub, err := splitSheetPrefixedRange(rng)
-			if err != nil {
-				return err
-			}
-			rows, cols, err := rangeDimensions(sub)
-			if err != nil {
-				return common.FlagErrorf("--ranges %q: %v", rng, err)
-			}
-			cells := fillCellsMatrix(rows, cols, map[string]interface{}{"data_validation": validation})
-			input := map[string]interface{}{
-				"excel_id":   token,
-				"range":      sub,
-				"sheet_name": sheet,
-				"cells":      cells,
-			}
-			out, err := callTool(ctx, runtime, token, ToolKindWrite, "set_cell_range", input)
-			if err != nil {
-				return fmt.Errorf("range %q failed: %w (partial: %d/%d done)", rng, err, len(results), len(ranges))
-			}
-			results = append(results, map[string]interface{}{"range": rng, "result": out})
-		}
-		runtime.Out(map[string]interface{}{"results": results}, nil)
-		return nil
-	},
-	Tips: []string{
-		"Calls set_cell_range once per range. A mid-batch failure leaves earlier ranges already updated — use --dry-run first to confirm the list.",
-	},
-}
-
-// DropdownDelete clears dropdowns from one or more sheet-prefixed ranges.
-// high-risk-write — irreversible removal of validation rules.
-var DropdownDelete = common.Shortcut{
-	Service:     "sheets",
-	Command:     "+dropdown-delete",
-	Description: "Remove dropdowns from one or more sheet-prefixed ranges (irreversible).",
-	Risk:        "high-risk-write",
-	Scopes:      []string{"sheets:spreadsheet:write_only"},
-	AuthTypes:   []string{"user", "bot"},
-	HasFormat:   true,
-	Flags: append(publicTokenFlags(),
-		common.Flag{Name: "ranges", Input: []string{common.File, common.Stdin}, Required: true,
-			Desc: "JSON array of sheet-prefixed A1 ranges (max 100)"},
-	),
-	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
-		if _, err := resolveSpreadsheetToken(runtime); err != nil {
-			return err
-		}
-		ranges, err := validateDropdownRanges(runtime)
-		if err != nil {
-			return err
-		}
-		if len(ranges) > 100 {
-			return common.FlagErrorf("--ranges accepts at most 100 entries; got %d", len(ranges))
-		}
-		return nil
-	},
-	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
-		token, _ := resolveSpreadsheetToken(runtime)
-		ranges, _ := validateDropdownRanges(runtime)
-		dry := common.NewDryRunAPI()
-		for _, rng := range ranges {
-			sheet, sub, _ := splitSheetPrefixedRange(rng)
-			rows, cols, _ := rangeDimensions(sub)
-			cells := fillCellsMatrix(rows, cols, map[string]interface{}{"data_validation": nil})
-			body, _ := buildToolBody("set_cell_range", map[string]interface{}{
-				"excel_id":   token,
-				"range":      sub,
-				"sheet_name": sheet,
-				"cells":      cells,
-			})
-			dry.POST(toolInvokePath(token, ToolKindWrite)).Body(body)
-		}
-		return dry.
-			Set("spreadsheet_token", token).
-			Set("tool_name", "set_cell_range").
-			Set("invocation_count", len(ranges))
-	},
-	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
-		token, err := resolveSpreadsheetToken(runtime)
-		if err != nil {
-			return err
-		}
-		ranges, err := validateDropdownRanges(runtime)
-		if err != nil {
-			return err
-		}
-		results := make([]interface{}, 0, len(ranges))
-		for _, rng := range ranges {
-			sheet, sub, err := splitSheetPrefixedRange(rng)
-			if err != nil {
-				return err
-			}
-			rows, cols, err := rangeDimensions(sub)
-			if err != nil {
-				return common.FlagErrorf("--ranges %q: %v", rng, err)
-			}
-			cells := fillCellsMatrix(rows, cols, map[string]interface{}{"data_validation": nil})
-			input := map[string]interface{}{
-				"excel_id":   token,
-				"range":      sub,
-				"sheet_name": sheet,
-				"cells":      cells,
-			}
-			out, err := callTool(ctx, runtime, token, ToolKindWrite, "set_cell_range", input)
-			if err != nil {
-				return fmt.Errorf("range %q failed: %w (partial: %d/%d done)", rng, err, len(results), len(ranges))
-			}
-			results = append(results, map[string]interface{}{"range": rng, "result": out})
-		}
-		runtime.Out(map[string]interface{}{"results": results}, nil)
-		return nil
-	},
-	Tips: []string{
-		"Calls set_cell_range once per range. A mid-batch failure leaves earlier ranges already cleared.",
-	},
-}
+// NOTE: +dropdown-update and +dropdown-delete were originally drafted here
+// but moved to lark_sheet_batch_update (B7) per the spec: multi-range
+// dropdown CRUD now goes through batch_update for atomicity. They'll land in
+// the batch_update file alongside +cells-batch-set-style.
 
 // ─── shared dropdown helpers ──────────────────────────────────────────
 
@@ -599,28 +419,6 @@ func buildDropdownValidation(runtime *common.RuntimeContext) (map[string]interfa
 		dv["highlight_options"] = true
 	}
 	return dv, nil
-}
-
-// validateDropdownRanges parses --ranges, requires every entry to carry a
-// sheet prefix, and returns the parsed list.
-func validateDropdownRanges(runtime *common.RuntimeContext) ([]string, error) {
-	raw, err := requireJSONArray(runtime, "ranges")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(raw))
-	for i, v := range raw {
-		s, ok := v.(string)
-		if !ok {
-			return nil, common.FlagErrorf("--ranges[%d] must be a string", i)
-		}
-		s = strings.TrimSpace(s)
-		if !strings.Contains(s, "!") {
-			return nil, common.FlagErrorf("--ranges[%d] (%q) must include a sheet prefix", i, s)
-		}
-		out = append(out, s)
-	}
-	return out, nil
 }
 
 // validateDropdownOptionsColors validates --options is a JSON array and that
@@ -719,15 +517,6 @@ func letterToColumnIndex(letters string) int {
 		n = n*26 + int(c-'A'+1)
 	}
 	return n - 1
-}
-
-// splitSheetPrefixedRange splits "sheet1!A2:A100" into ("sheet1", "A2:A100").
-func splitSheetPrefixedRange(rng string) (sheet, sub string, err error) {
-	idx := strings.Index(rng, "!")
-	if idx <= 0 || idx == len(rng)-1 {
-		return "", "", common.FlagErrorf("range %q must use sheet!range form", rng)
-	}
-	return strings.TrimSpace(rng[:idx]), strings.TrimSpace(rng[idx+1:]), nil
 }
 
 // fillCellsMatrix returns a rows×cols matrix where every cell is the same

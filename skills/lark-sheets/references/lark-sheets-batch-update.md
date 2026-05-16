@@ -28,6 +28,8 @@
 | --- | --- | --- | --- |
 | `batch_update` | `+batch-update` | high-risk-write | 批量 |
 |  | `+cells-batch-set-style` | write | 批量 |
+|  | `+dropdown-update` | write | 对象 |
+|  | `+dropdown-delete` | high-risk-write | 对象 |
 
 ## Flags
 
@@ -50,6 +52,29 @@
 | `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
 | `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
 | `--data` | 专有 | string + File + Stdin | 是 | JSON 数组 `[{"ranges":["sheet1!A1:B2"],"style":{...}}]`；每个 ranges 元素必须带 sheet 前缀 |
+| `--dry-run` | 系统 | bool | 否 |  |
+
+### `+dropdown-update`
+
+| Flag | 分类 | Type | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
+| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
+| `--ranges` | 专有 | string + File + Stdin | 是 | 目标范围 JSON 数组（如 `["sheet1!A2:A100"]`），每项必须带 sheet 前缀 |
+| `--options` | 专有 | string + File + Stdin | 是 | 选项 JSON 数组 |
+| `--colors` | 专有 | string + File + Stdin | 否 | 颜色数组（与 `--options` 等长） |
+| `--multiple` | 专有 | bool | 否 | 启用多选 |
+| `--highlight` | 专有 | bool | 否 | 选项配色 |
+| `--dry-run` | 系统 | bool | 否 |  |
+
+### `+dropdown-delete`
+
+| Flag | 分类 | Type | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
+| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
+| `--ranges` | 专有 | string + File + Stdin | 是 | 目标范围 JSON 数组（最多 100 个，每项带 sheet 前缀） |
+| `--yes` | 系统 | bool | 是 | `high-risk-write`，必须二次确认（不带时退出码 10） |
 | `--dry-run` | 系统 | bool | 否 |  |
 
 ## Schemas
@@ -79,6 +104,19 @@ _单元格样式属性，包括字体、颜色、对齐方式和数字格式_
 - `number_format` (string?) — 数字格式（例如：文本用 "@"、数字用 "0.00"、货币用 "$#,##0.00"、日期用 "mm/dd/yyyy"）
 - `vertical_alignment` (enum?) — 垂直对齐方式 [top / middle / bottom]
 - `word_wrap` (enum?) — 是否自动换行，默认溢出，可选自动换行或裁剪 [overflow / auto-wrap / word-clip]
+
+### `+dropdown-update` `--options`
+
+_数据验证配置_
+
+**顶层字段**：
+- `help_text` (string?) — 验证失败时显示的提示文本
+- `items` (array<string>?) — 列表选项（type='list' 时必填）
+- `operator` (enum?) — 比较运算符（type='number'/'date'/'textLength' 时必填） [equal / notEqual / greaterThan / greaterThanOrEqual / lessThan / lessThanOrEqual / between / notBetween]
+- `range` (string?) — 源数据区域（type='listFromRange' 时必填，格式：'SheetName!A1:A10'）
+- `support_multiple_values` (boolean?) — 列表验证是否支持多选（type='list'/'listFromRange' 时可选，默认 false）
+- `type` (enum) — 数据验证类型：list（下拉列表）、listFromRange（引用范围下拉列表）、number（数字）、date（日期）、textLength（文本长度）、… [list / listFromRange / number / date / textLength / checkbox]
+- `values` (array<oneOf>?) — 比较值（operator 为 'between'/'notBetween' 时需要两个值，其它运算符需要一个值）
 
 ## Examples
 

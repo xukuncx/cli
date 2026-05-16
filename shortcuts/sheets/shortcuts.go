@@ -45,7 +45,5 @@ func Shortcuts() []common.Shortcut {
 		CellsSetStyle,
 		CsvPut,
 		DropdownSet,
-		DropdownUpdate,
-		DropdownDelete,
 	}
 }
