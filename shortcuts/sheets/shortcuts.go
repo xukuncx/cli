@@ -73,5 +73,11 @@ func Shortcuts() []common.Shortcut {
 		FilterViewCreate, FilterViewUpdate, FilterViewDelete,
 		SparklineCreate, SparklineUpdate, SparklineDelete,
 		FloatImageCreate, FloatImageUpdate, FloatImageDelete,
+
+		// lark_sheet_batch_update
+		BatchUpdate,
+		CellsBatchSetStyle,
+		DropdownUpdate,
+		DropdownDelete,
 	}
 }
