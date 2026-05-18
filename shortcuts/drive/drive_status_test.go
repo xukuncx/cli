@@ -302,6 +302,10 @@ func TestDriveStatusFiltersLocalAndRemoteByExt(t *testing.T) {
 	if strings.Contains(out, `"b.txt"`) || strings.Contains(out, `"c.txt"`) {
 		t.Fatalf("filtered-out txt files should not appear in output: %s", out)
 	}
+	if !strings.Contains(out, `"file_token": "tok_a"`) {
+		t.Fatalf("expected tok_a file_token in output (remote stub must be exercised): %s", out)
+	}
+	reg.Verify(t)
 }
 
 // TestDriveStatusQuickMarksUntrustedTimestampAsModified locks in the

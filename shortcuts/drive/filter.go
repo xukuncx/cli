@@ -21,8 +21,11 @@ import (
 	"github.com/larksuite/cli/shortcuts/common"
 )
 
+// driveIgnoreFileName is the name of the ignore file read from the sync root.
 const driveIgnoreFileName = ".larkignore"
 
+// driveSyncBuiltinExcludePatterns lists glob patterns that are always excluded
+// from drive sync unless overridden by --include.
 var driveSyncBuiltinExcludePatterns = []string{
 	".lark-sync/**",
 	".git/**",
@@ -38,6 +41,8 @@ var driveSyncBuiltinExcludePatterns = []string{
 	"coverage/**",
 }
 
+// driveSyncFilter applies filtering rules to drive sync file paths.
+// Precedence: CLI flags (--exclude > --include > --ext) > .larkignore > built-in excludes.
 type driveSyncFilter struct {
 	exts            map[string]struct{}
 	includes        []string
@@ -46,11 +51,14 @@ type driveSyncFilter struct {
 	builtinExcludes []string
 }
 
+// driveFilterDecision reports whether a path is included and why.
 type driveFilterDecision struct {
 	Included bool
 	Reason   string
 }
 
+// buildDriveSyncFilter constructs a driveSyncFilter from CLI flags and the
+// .larkignore file in localDir. Returns a validation error for invalid patterns.
 func buildDriveSyncFilter(runtime *common.RuntimeContext, localDir string) (*driveSyncFilter, error) {
 	ignoreRules, err := readDriveIgnoreRules(runtime, localDir)
 	if err != nil {
@@ -89,6 +97,8 @@ func buildDriveSyncFilter(runtime *common.RuntimeContext, localDir string) (*dri
 	}, nil
 }
 
+// readDriveIgnoreRules reads and parses .larkignore from localDir.
+// Returns nil rules (no error) when the file does not exist.
 func readDriveIgnoreRules(runtime *common.RuntimeContext, localDir string) ([]string, error) {
 	ignorePath := filepath.Join(localDir, driveIgnoreFileName)
 	if _, err := runtime.FileIO().Stat(ignorePath); err != nil {
@@ -112,6 +122,8 @@ func readDriveIgnoreRules(runtime *common.RuntimeContext, localDir string) ([]st
 	return rules, nil
 }
 
+// parseDriveIgnore parses ignore rules from r. Blank lines and lines
+// starting with "#" are skipped. Each rule is normalized via normalizeDrivePattern.
 func parseDriveIgnore(r io.Reader) ([]string, error) {
 	var rules []string
 	scanner := bufio.NewScanner(r)
@@ -132,6 +144,8 @@ func parseDriveIgnore(r io.Reader) ([]string, error) {
 	return rules, nil
 }
 
+// normalizeDrivePatterns validates and normalizes a slice of glob patterns.
+// source is used in error messages to identify the origin of a bad pattern.
 func normalizeDrivePatterns(patterns []string, source string) ([]string, error) {
 	out := make([]string, 0, len(patterns))
 	for _, pattern := range patterns {
@@ -147,6 +161,9 @@ func normalizeDrivePatterns(patterns []string, source string) ([]string, error) 
 	return out, nil
 }
 
+// normalizeDrivePattern normalizes a single glob pattern: trims whitespace,
+// converts to forward slashes, strips leading "./" and "/", appends "/**" to
+// trailing slashes, and validates the pattern with doublestar.
 func normalizeDrivePattern(pattern string) (string, error) {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
@@ -164,6 +181,8 @@ func normalizeDrivePattern(pattern string) (string, error) {
 	return pattern, nil
 }
 
+// MatchFile returns the filter decision for a file at the given relative path.
+// The precedence order is: --exclude > --include miss > --ext miss > --include > .larkignore > built-in excludes > default allow.
 func (f *driveSyncFilter) MatchFile(rel string) driveFilterDecision {
 	rel = filepath.ToSlash(rel)
 	if rel == "" || rel == "." {
@@ -193,6 +212,9 @@ func (f *driveSyncFilter) MatchFile(rel string) driveFilterDecision {
 	return driveFilterDecision{Included: true, Reason: "default"}
 }
 
+// MatchDir returns the filter decision for a directory at the given relative path.
+// Directories are included if they are ancestors of an include pattern so that
+// directory traversal can reach the matching files beneath them.
 func (f *driveSyncFilter) MatchDir(rel string) driveFilterDecision {
 	rel = filepath.ToSlash(rel)
 	if rel == "" || rel == "." {
@@ -213,8 +235,23 @@ func (f *driveSyncFilter) MatchDir(rel string) driveFilterDecision {
 	if len(f.includes) > 0 {
 		prefix := rel + "/"
 		for _, pattern := range f.includes {
-			base := strings.TrimSuffix(pattern, "/**")
-			if strings.HasPrefix(pattern, prefix) || strings.HasPrefix(base, prefix) {
+			// Direct prefix match: pattern starts with "docs/sub/".
+			if strings.HasPrefix(pattern, prefix) {
+				return driveFilterDecision{Included: true, Reason: "flag_include_ancestor"}
+			}
+			// Extract the leading non-wildcard directory prefix from the
+			// pattern. For "docs/**/*.md" the concrete prefix is "docs/",
+			// so "docs" and "docs/sub" are ancestors. For "src/lib/*.go"
+			// the concrete prefix is "src/lib/".
+			concretePrefix := driveConcreteDirPrefix(pattern)
+			if concretePrefix == "" {
+				continue
+			}
+			// rel is an ancestor if its path falls within the concrete
+			// prefix (e.g. "docs" is a prefix of "docs/") or the
+			// concrete prefix falls within rel (e.g. "docs/" is a
+			// prefix of "docs/sub/").
+			if strings.HasPrefix(prefix, concretePrefix) || strings.HasPrefix(concretePrefix, prefix) {
 				return driveFilterDecision{Included: true, Reason: "flag_include_ancestor"}
 			}
 		}
@@ -223,6 +260,28 @@ func (f *driveSyncFilter) MatchDir(rel string) driveFilterDecision {
 	return driveFilterDecision{Included: true, Reason: "default"}
 }
 
+// driveConcreteDirPrefix returns the leading non-wildcard directory portion of
+// a glob pattern, with a trailing "/". For example:
+//   - "docs/**/*.md" → "docs/"
+//   - "src/lib/*.go" → "src/lib/"
+//   - "docs/**"      → "docs/"
+//   - "*.log"        → "" (no concrete directory prefix)
+func driveConcreteDirPrefix(pattern string) string {
+	segments := strings.Split(pattern, "/")
+	var concrete []string
+	for _, seg := range segments {
+		if strings.ContainsAny(seg, "*?[") {
+			break
+		}
+		concrete = append(concrete, seg)
+	}
+	if len(concrete) == 0 {
+		return ""
+	}
+	return strings.Join(concrete, "/") + "/"
+}
+
+// matchedAny reports whether rel matches any of the given glob patterns.
 func matchedAny(rel string, patterns []string) bool {
 	for _, pattern := range patterns {
 		if driveMatchPattern(pattern, rel) {
@@ -232,6 +291,9 @@ func matchedAny(rel string, patterns []string) bool {
 	return false
 }
 
+// driveMatchPattern matches a single glob pattern against rel.
+// It handles "/**" suffix matching, doublestar glob matching, and
+// bare-name patterns (no "/") which are matched at any depth via "**/" prefix.
 func driveMatchPattern(pattern, rel string) bool {
 	if pattern == "" || rel == "" {
 		return false
@@ -253,6 +315,8 @@ func driveMatchPattern(pattern, rel string) bool {
 	return false
 }
 
+// filterDriveRemoteEntries filters remote Drive entries using the filter.
+// Folders are matched with MatchDir; files are matched with MatchFile.
 func filterDriveRemoteEntries(entries []driveRemoteEntry, filter *driveSyncFilter) []driveRemoteEntry {
 	if filter == nil {
 		return entries
@@ -270,6 +334,9 @@ func filterDriveRemoteEntries(entries []driveRemoteEntry, filter *driveSyncFilte
 	return out
 }
 
+// filterDrivePushLocalView filters local files and directories for the push
+// flow. It returns the filtered file map and a sorted list of directories
+// (both parent dirs of kept files and explicitly included dirs).
 func filterDrivePushLocalView(files map[string]drivePushLocalFile, dirs []string, filter *driveSyncFilter) (map[string]drivePushLocalFile, []string) {
 	if filter == nil {
 		dirsSet := make(map[string]struct{})
@@ -302,6 +369,7 @@ func filterDrivePushLocalView(files map[string]drivePushLocalFile, dirs []string
 	return filtered, sortedDriveDirs(dirsSet)
 }
 
+// sortedDriveDirs returns the directory set sorted by depth then name.
 func sortedDriveDirs(dirsSet map[string]struct{}) []string {
 	dirs := make([]string, 0, len(dirsSet))
 	for d := range dirsSet {
@@ -317,19 +385,7 @@ func sortedDriveDirs(dirsSet map[string]struct{}) []string {
 	return dirs
 }
 
-func filterDriveStatusLocalHashes(files map[string]string, filter *driveSyncFilter) map[string]string {
-	if filter == nil {
-		return files
-	}
-	filtered := make(map[string]string, len(files))
-	for rel, hash := range files {
-		if filter.MatchFile(rel).Included {
-			filtered[rel] = hash
-		}
-	}
-	return filtered
-}
-
+// filterDriveStatusLocalFiles filters the local file info map by the filter.
 func filterDriveStatusLocalFiles(files map[string]driveStatusLocalFile, filter *driveSyncFilter) map[string]driveStatusLocalFile {
 	if filter == nil {
 		return files
@@ -343,6 +399,8 @@ func filterDriveStatusLocalFiles(files map[string]driveStatusLocalFile, filter *
 	return filtered
 }
 
+// filterDrivePullLocalAbsPaths filters absolute local paths for the pull
+// --delete-local flow, keeping only paths whose relative form passes the filter.
 func filterDrivePullLocalAbsPaths(root string, absPaths []string, filter *driveSyncFilter) ([]string, error) {
 	if filter == nil {
 		return absPaths, nil

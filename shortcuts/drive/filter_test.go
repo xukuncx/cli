@@ -59,6 +59,9 @@ func TestDriveSyncFilterMatchDirIncludeAncestor(t *testing.T) {
 	if !filter.MatchDir("docs").Included {
 		t.Fatal("docs dir should be included as ancestor of include pattern")
 	}
+	if !filter.MatchDir("docs/sub").Included {
+		t.Fatal("docs/sub dir should be included as ancestor of include pattern docs/**/*.md")
+	}
 	if filter.MatchDir("vendor").Included {
 		t.Fatal("vendor dir should not be included when include patterns only target docs")
 	}

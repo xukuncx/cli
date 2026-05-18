@@ -97,6 +97,17 @@ func TestDrive_PushDryRunAcceptsFilterFlags(t *testing.T) {
 	})
 	require.NoError(t, err)
 	result.AssertExitCode(t, 0)
+
+	out := result.Stdout
+	if got := gjson.Get(out, "api.0.method").String(); got != "GET" {
+		t.Fatalf("method = %q, want GET\nstdout:\n%s", got, out)
+	}
+	if got := gjson.Get(out, "api.0.url").String(); got != "/open-apis/drive/v1/files" {
+		t.Fatalf("url = %q, want /open-apis/drive/v1/files\nstdout:\n%s", got, out)
+	}
+	if got := gjson.Get(out, "folder_token").String(); got != "fldcnE2E001" {
+		t.Fatalf("folder_token = %q, want fldcnE2E001\nstdout:\n%s", got, out)
+	}
 }
 
 // TestDrive_PushDryRunRejectsAbsoluteLocalDir confirms the path validator
