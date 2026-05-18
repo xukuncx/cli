@@ -374,6 +374,28 @@ func TestDocsUpdateWarningsEmpty(t *testing.T) {
 	}
 }
 
+func TestIsIntWidth(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"50", true},
+		{"0", true},
+		{"0.5", false},
+		{"1.0", false},
+		{"", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			if got := isIntWidth(tt.input); got != tt.want {
+				t.Errorf("isIntWidth(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCheckV2XMLBareAmpersand(t *testing.T) {
 	t.Parallel()
 
@@ -469,6 +491,12 @@ func TestCheckV2XMLWarnings(t *testing.T) {
 		{
 			name:    "column float width value is not flagged",
 			content: `<grid><column width="0.5"><p>A</p></column></grid>`,
+			wantLen: 0,
+		},
+		// mixed quotes (opening " and closing ') should NOT match — backreference check
+		{
+			name:    "column mixed-quote width is not flagged",
+			content: `<column width="50'/>`,
 			wantLen: 0,
 		},
 	}

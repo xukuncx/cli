@@ -317,13 +317,20 @@ func CheckV2XMLBareAmpersand(content string) string {
 // hypothetical attributes or element names that start with "quote-container".
 var quoteContainerTagRe = regexp.MustCompile(`<quote-container(?:\s|>|/)`)
 
-// columnIntWidthRe matches a <column … width="N" …> attribute where N is a
-// plain integer (not a float). The pattern requires:
-//   - whitespace before "width" to exclude attributes like data-width
-//   - the value to be enclosed in quotes with digits immediately before the
-//     closing quote, so width="0.5" does NOT match (the dot prevents \d+
-//     from consuming the full value up to the quote).
-var columnIntWidthRe = regexp.MustCompile(`<column\b[^>]*\swidth\s*=\s*["']\d+["']`)
+// columnWidthAttrRe matches a <column … width="…" …> attribute, capturing the
+// opening quote, the numeric value, and the closing quote. Go's RE2 does not
+// support backreferences, so we verify opening == closing quote in Go code.
+var columnWidthAttrRe = regexp.MustCompile(`<column\b[^>]*\swidth\s*=\s*(['"])([0-9.]+)(['"])`)
+
+// isIntWidth reports whether s is a plain integer with no decimal point.
+func isIntWidth(s string) bool {
+	for _, c := range s {
+		if c == '.' {
+			return false
+		}
+	}
+	return true
+}
 
 // CheckV2XMLWarnings returns a list of non-fatal warnings for v2 XML content.
 // These describe constructs that are silently dropped or ignored by the v2 API
@@ -347,10 +354,13 @@ func CheckV2XMLWarnings(content string) []string {
 			"<quote-container> is not supported in v2 XML and will be silently dropped; "+
 				"use <blockquote> instead.")
 	}
-	if columnIntWidthRe.MatchString(content) {
-		warnings = append(warnings,
-			"<column width=\"N\"> with an integer value has no effect in v2 XML; "+
-				"use width-ratio=\"0.5\" (float 0–1) to set column width.")
+	for _, m := range columnWidthAttrRe.FindAllStringSubmatch(content, -1) {
+		if m[1] == m[3] && isIntWidth(m[2]) {
+			warnings = append(warnings,
+				`<column width="N"> with an integer value has no effect in v2 XML; `+
+					`use width-ratio="0.5" (float 0–1) to set column width.`)
+			break
+		}
 	}
 	return warnings
 }

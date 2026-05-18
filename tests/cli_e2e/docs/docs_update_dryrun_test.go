@@ -11,6 +11,7 @@ import (
 
 	clie2e "github.com/larksuite/cli/tests/cli_e2e"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // TestDocs_UpdateDryRunSuppressesSemanticWarnings asserts the contract that
@@ -67,4 +68,105 @@ func TestDocs_UpdateDryRunSuppressesSemanticWarnings(t *testing.T) {
 				needle, result.Stdout, result.Stderr)
 		}
 	}
+}
+
+// TestDocs_V2CreateXMLGuardDryRun verifies the v2 XML content guards on the
+// docs +create dry-run path. A bare ampersand in XML content must cause a
+// validation error (exit 2), while clean XML must succeed.
+func TestDocs_V2CreateXMLGuardDryRun(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_APP_ID", "app")
+	t.Setenv("LARKSUITE_CLI_APP_SECRET", "secret")
+	t.Setenv("LARKSUITE_CLI_BRAND", "feishu")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	t.Run("bare ampersand rejected", func(t *testing.T) {
+		result, err := clie2e.RunCmd(ctx, clie2e.Request{
+			Args: []string{
+				"docs", "+create",
+				"--content", `<text>R&D</text>`,
+				"--dry-run",
+			},
+			DefaultAs: "bot",
+		})
+		require.NoError(t, err)
+		result.AssertExitCode(t, 2)
+
+		combined := result.Stdout + "\n" + result.Stderr
+		if !strings.Contains(combined, "bare &") {
+			t.Fatalf("expected bare-ampersand error, got:\nstdout: %s\nstderr: %s", result.Stdout, result.Stderr)
+		}
+	})
+
+	t.Run("clean XML accepted", func(t *testing.T) {
+		result, err := clie2e.RunCmd(ctx, clie2e.Request{
+			Args: []string{
+				"docs", "+create",
+				"--content", `<text>R&amp;D</text>`,
+				"--dry-run",
+			},
+			DefaultAs: "bot",
+		})
+		require.NoError(t, err)
+		result.AssertExitCode(t, 0)
+
+		method := gjson.Get(result.Stdout, "api.0.method").String()
+		require.Equal(t, "POST", method)
+	})
+}
+
+// TestDocs_V2UpdateXMLGuardDryRun verifies the v2 XML content guards on the
+// docs +update dry-run path. A bare ampersand must cause a validation error,
+// while clean XML with a <quote-container> (non-fatal warning) must still
+// succeed with exit 0 — warnings are only emitted on the execute path, not
+// dry-run.
+func TestDocs_V2UpdateXMLGuardDryRun(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_APP_ID", "app")
+	t.Setenv("LARKSUITE_CLI_APP_SECRET", "secret")
+	t.Setenv("LARKSUITE_CLI_BRAND", "feishu")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	t.Run("bare ampersand rejected", func(t *testing.T) {
+		result, err := clie2e.RunCmd(ctx, clie2e.Request{
+			Args: []string{
+				"docs", "+update",
+				"--doc", "doxcnDryRunE2E",
+				"--command", "overwrite",
+				"--content", `<text>R&D</text>`,
+				"--dry-run",
+			},
+			DefaultAs: "bot",
+		})
+		require.NoError(t, err)
+		result.AssertExitCode(t, 2)
+
+		combined := result.Stdout + "\n" + result.Stderr
+		if !strings.Contains(combined, "bare &") {
+			t.Fatalf("expected bare-ampersand error, got:\nstdout: %s\nstderr: %s", result.Stdout, result.Stderr)
+		}
+	})
+
+	t.Run("warning-only content passes dry-run", func(t *testing.T) {
+		result, err := clie2e.RunCmd(ctx, clie2e.Request{
+			Args: []string{
+				"docs", "+update",
+				"--doc", "doxcnDryRunE2E",
+				"--command", "overwrite",
+				"--content", `<quote-container><p>text</p></quote-container>`,
+				"--dry-run",
+			},
+			DefaultAs: "bot",
+		})
+		require.NoError(t, err)
+		result.AssertExitCode(t, 0)
+
+		// Warnings must NOT appear in dry-run output (only emitted on execute path).
+		combined := result.Stdout + "\n" + result.Stderr
+		if strings.Contains(combined, "warning:") {
+			t.Errorf("dry-run must not emit XML warnings; got:\nstdout: %s\nstderr: %s", result.Stdout, result.Stderr)
+		}
+	})
 }
