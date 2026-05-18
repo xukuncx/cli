@@ -63,7 +63,7 @@ jobs:
       - name: Fetch meta data
         run: python3 scripts/fetch_meta.py
       - name: Run tests
-        run: go test -v -race -count=1 -timeout=5m ./cmd/... ./internal/... ./shortcuts/...
+        run: go test -v -race -count=1 -timeout=5m ./cmd/... ./internal/... ./shortcuts/... ./extension/...
 
   lint:
     needs: fast-gate

@@ -12,12 +12,17 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 
+	"github.com/larksuite/cli/extension/platform"
 	internalauth "github.com/larksuite/cli/internal/auth"
 	"github.com/larksuite/cli/internal/build"
+	"github.com/larksuite/cli/internal/cmdpolicy"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
+	"github.com/larksuite/cli/internal/hook"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/registry"
 	"github.com/larksuite/cli/internal/skillscheck"
@@ -88,8 +93,9 @@ func Execute() int {
 	}
 	configureFlagCompletions(os.Args)
 
-	f, rootCmd := buildInternal(
-		context.Background(), inv,
+	ctx := context.Background()
+	f, rootCmd, reg := buildInternal(
+		ctx, inv,
 		WithIO(os.Stdin, os.Stdout, os.Stderr),
 		HideProfile(isSingleAppMode()),
 	)
@@ -99,8 +105,18 @@ func Execute() int {
 		setupNotices()
 	}
 
-	if err := rootCmd.Execute(); err != nil {
-		return handleRootError(f, err)
+	runErr := rootCmd.Execute()
+
+	// Fire Shutdown lifecycle hooks regardless of run outcome.
+	// emitShutdown imposes a 2s total deadline and never propagates handler
+	// errors (Emit's documented Shutdown contract), so it cannot block exit
+	// or alter the user-visible exit code.
+	if reg != nil && !isCompletionCommand(os.Args) {
+		_ = hook.Emit(ctx, reg, platform.Shutdown, runErr)
+	}
+
+	if runErr != nil {
+		return handleRootError(f, runErr)
 	}
 	return 0
 }
@@ -159,11 +175,17 @@ func setupNotices() {
 }
 
 // isCompletionCommand returns true if args indicate a shell completion request.
-// Update notifications must be suppressed for these to avoid corrupting
-// machine-parseable completion output.
+// Update notifications and Shutdown lifecycle emits must be suppressed for
+// these to avoid corrupting machine-parseable completion output and to avoid
+// firing plugin Shutdown handlers on every Tab keystroke.
+//
+// Cobra dispatches BOTH "__complete" and its alias "__completeNoDesc" through
+// the same hidden subcommand (see cobra/completions.go ShellCompRequestCmd /
+// ShellCompNoDescRequestCmd). Check both, otherwise bash/zsh completion
+// (which often uses NoDesc) silently bypasses the gate.
 func isCompletionCommand(args []string) bool {
 	for _, arg := range args {
-		if arg == "completion" || arg == "__complete" {
+		if arg == "completion" || arg == "__complete" || arg == "__completeNoDesc" {
 			return true
 		}
 	}
@@ -261,6 +283,70 @@ func writeSecurityPolicyError(w io.Writer, spErr *internalauth.SecurityPolicyErr
 		return
 	}
 	fmt.Fprint(w, buffer.String())
+}
+
+// installUnknownSubcommandGuard replaces cobra's silent help fallback on
+// group commands (no Run/RunE) with an unknown_subcommand error.
+//
+// IMPORTANT: every command modified here is also tagged with
+// cmdpolicy.AnnotationPureGroup so the user-layer policy engine
+// continues to treat the command as a pure parent group. Without the
+// tag, the RunE injection here would flip Runnable()=true and a user
+// rule like `max_risk: read` would deny every `<group> --help` call
+// with reason_code=risk_not_annotated.
+func installUnknownSubcommandGuard(cmd *cobra.Command) {
+	if cmd.HasSubCommands() && cmd.Run == nil && cmd.RunE == nil {
+		cmd.RunE = unknownSubcommandRunE
+		if cmd.Annotations == nil {
+			cmd.Annotations = map[string]string{}
+		}
+		cmd.Annotations[cmdpolicy.AnnotationPureGroup] = "true"
+	}
+	for _, c := range cmd.Commands() {
+		installUnknownSubcommandGuard(c)
+	}
+}
+
+func unknownSubcommandRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	unknown := args[0]
+	available := availableSubcommandNames(cmd)
+	msg := fmt.Sprintf("unknown subcommand %q for %q", unknown, cmd.CommandPath())
+	hint := fmt.Sprintf("run `%s --help` to see available subcommands", cmd.CommandPath())
+	if len(available) > 0 {
+		hint = fmt.Sprintf("available subcommands: %s", strings.Join(available, ", "))
+	}
+	return &output.ExitError{
+		Code: output.ExitValidation,
+		Detail: &output.ErrDetail{
+			Type:    "unknown_subcommand",
+			Message: msg,
+			Hint:    hint,
+			Detail: map[string]any{
+				"unknown":      unknown,
+				"command_path": cmd.CommandPath(),
+				"available":    available,
+			},
+		},
+	}
+}
+
+func availableSubcommandNames(cmd *cobra.Command) []string {
+	subs := make([]string, 0, len(cmd.Commands()))
+	for _, c := range cmd.Commands() {
+		if c.Hidden || !c.IsAvailableCommand() {
+			continue
+		}
+		name := c.Name()
+		if name == "help" || name == "completion" {
+			continue
+		}
+		subs = append(subs, name)
+	}
+	sort.Strings(subs)
+	return subs
 }
 
 // installTipsHelpFunc wraps the default help function to append a TIPS section

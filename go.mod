@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/bmatcuk/doublestar/v4 v4.6.1
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/charmbracelet/huh v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gofrs/flock v0.8.1
@@ -22,6 +22,7 @@ require (
 	golang.org/x/sys v0.33.0
 	golang.org/x/term v0.27.0
 	golang.org/x/text v0.23.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -61,5 +62,4 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sync v0.15.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
