@@ -322,8 +322,11 @@ var quoteContainerTagRe = regexp.MustCompile(`<quote-container(?:\s|>|/)`)
 // support backreferences, so we verify opening == closing quote in Go code.
 var columnWidthAttrRe = regexp.MustCompile(`<column\b[^>]*\swidth\s*=\s*(['"])([0-9.]+)(['"])`)
 
-// isIntWidth reports whether s is a plain integer with no decimal point.
+// isIntWidth reports whether s is a non-empty string of digits with no decimal point.
 func isIntWidth(s string) bool {
+	if s == "" {
+		return false
+	}
 	for _, c := range s {
 		if c == '.' {
 			return false

@@ -384,7 +384,7 @@ func TestIsIntWidth(t *testing.T) {
 		{"0", true},
 		{"0.5", false},
 		{"1.0", false},
-		{"", true},
+		{"", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {

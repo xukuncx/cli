@@ -74,6 +74,7 @@ func TestDocs_UpdateDryRunSuppressesSemanticWarnings(t *testing.T) {
 // docs +create dry-run path. A bare ampersand in XML content must cause a
 // validation error (exit 2), while clean XML must succeed.
 func TestDocs_V2CreateXMLGuardDryRun(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", t.TempDir())
 	t.Setenv("LARKSUITE_CLI_APP_ID", "app")
 	t.Setenv("LARKSUITE_CLI_APP_SECRET", "secret")
 	t.Setenv("LARKSUITE_CLI_BRAND", "feishu")
@@ -122,6 +123,7 @@ func TestDocs_V2CreateXMLGuardDryRun(t *testing.T) {
 // succeed with exit 0 — warnings are only emitted on the execute path, not
 // dry-run.
 func TestDocs_V2UpdateXMLGuardDryRun(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", t.TempDir())
 	t.Setenv("LARKSUITE_CLI_APP_ID", "app")
 	t.Setenv("LARKSUITE_CLI_APP_SECRET", "secret")
 	t.Setenv("LARKSUITE_CLI_BRAND", "feishu")
@@ -162,6 +164,11 @@ func TestDocs_V2UpdateXMLGuardDryRun(t *testing.T) {
 		})
 		require.NoError(t, err)
 		result.AssertExitCode(t, 0)
+
+		// Assert dry-run request envelope shape.
+		method := gjson.Get(result.Stdout, "api.0.method").String()
+		require.Equal(t, "PUT", method)
+		require.Contains(t, gjson.Get(result.Stdout, "api.0.url").String(), "doxcnDryRunE2E")
 
 		// Warnings must NOT appear in dry-run output (only emitted on execute path).
 		combined := result.Stdout + "\n" + result.Stderr
