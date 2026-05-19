@@ -1,0 +1,113 @@
+# apps +list
+
+> **前置条件：** 先阅读 [`../lark-shared/SKILL.md`](../../lark-shared/SKILL.md)。
+
+列出当前用户名下的妙搭应用。**cursor 分页**：默认拉一页（`--page-size 20`），通过 `--page-token` 拉下一页。
+
+## 命令
+
+```bash
+# 拉第一页（默认 page_size=20）
+lark-cli apps +list
+
+# 自定义页大小
+lark-cli apps +list --page-size 50
+
+# 翻页（拿上一次响应的 page_token）
+lark-cli apps +list --page-token "eyJQaW5PcmRlciI6..."
+
+# 取 ID 列表（脚本场景）
+lark-cli apps +list -q '.data.items[].app_id'
+
+# 按名字找 app_id
+lark-cli apps +list -q '.data.items[] | select(.name=="客户调研问卷") | .app_id'
+```
+
+## 参数
+
+| 参数 | 必填 | 默认 | 说明 |
+|---|---|---|---|
+| `--page-size <int>` | ❌ | `20` | 每页条数 |
+| `--page-token <str>` | ❌ | `""` | 翻页 cursor，从上次响应的 `data.page_token` 拿 |
+
+## 返回值
+
+**成功：**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "app_id": "app_4k5jepcbjmv6m",
+        "name": "客户调研问卷",
+        "description": "...",
+        "icon_url": "...",
+        "created_at": "2026-05-18T10:00:00Z",
+        "updated_at": "2026-05-18T10:05:00Z"
+      }
+    ],
+    "page_token": "cursor_next_xxx",
+    "has_more": true
+  }
+}
+```
+
+**成功（空列表）：**
+
+```json
+{ "ok": true, "data": { "items": [], "has_more": false } }
+```
+
+**失败：**
+
+```json
+{ "ok": false, "error": { "type": "api_error", "message": "...", "hint": "..." } }
+```
+
+## 字段语义
+
+- `data.items` 长度可能为 0（用户没建过应用）
+- `data.has_more=true` 表示还有下一页；用 `data.page_token` 作为下次 `--page-token` 传入
+- `data.has_more=false` 且 `data.page_token` 为空 / 缺省表示已经到末尾
+
+## 典型场景
+
+### 场景 1：用户说"列出我的应用"
+
+```bash
+lark-cli apps +list
+```
+
+> 你有 N 个妙搭应用：
+> - 客户调研问卷 (`app_4k5jepcbjmv6m`)
+> - Demo (`app_xxx`)
+
+如果 `has_more=true`：
+
+> 还有更多应用未列出，用 `apps +list --page-token "{page_token}"` 拉下一页。
+
+### 场景 2：列表为空
+
+> 当前没有妙搭应用。可以用 `apps +create --name "..."` 新建一个。
+
+### 场景 3：按名字找 app_id（Agent 内部）
+
+```bash
+lark-cli apps +list -q '.data.items[] | select(.name=="客户调研问卷") | .app_id'
+```
+
+如果第一页没找到 + `has_more=true`，按 `--page-token` 翻页继续找。直接拿 `app_id`，不用向用户展示。
+
+## 协同命令
+
+| 场景 | 命令 |
+|---|---|
+| 创建新应用 | `apps +create` |
+| 修改应用 | `apps +update` |
+
+## 参考
+
+- [lark-apps](../SKILL.md)
+- [lark-shared](../../lark-shared/SKILL.md)
