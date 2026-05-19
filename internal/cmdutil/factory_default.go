@@ -134,8 +134,10 @@ func cachedLarkClientFunc(f *Factory) func() (*lark.Client, error) {
 			Transport:     buildSDKTransport(),
 			CheckRedirect: safeRedirectPolicy,
 		}))
-		ep := core.ResolveEndpoints(acct.Brand)
-		opts = append(opts, lark.WithOpenBaseUrl(ep.Open))
+		// Use ResolveOpenBaseURL (not ResolveEndpoints(...).Open directly) so the
+		// LARK_CLI_OPEN_API_BASE env override takes effect in production code paths,
+		// not only the test factory. See internal/core/types.go.
+		opts = append(opts, lark.WithOpenBaseUrl(core.ResolveOpenBaseURL(acct.Brand)))
 		return lark.NewClient(acct.AppID, credential.RuntimeAppSecret(acct.AppSecret), opts...), nil
 	})
 }
