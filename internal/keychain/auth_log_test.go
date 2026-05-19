@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/larksuite/cli/internal/build"
 )
 
 // TestAuthLogDir_UsesValidatedLogDirEnv verifies that a valid absolute
@@ -91,6 +92,9 @@ func TestBuildRemoteAuthPayload_Response(t *testing.T) {
 	if params["x_tt_logid"] != event.LogID {
 		t.Fatalf("params.x_tt_logid = %v, want %q", params["x_tt_logid"], event.LogID)
 	}
+	if params["lark_cli_version"] != build.Version {
+		t.Fatalf("params.lark_cli_version = %v, want %q", params["lark_cli_version"], build.Version)
+	}
 }
 
 func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
@@ -144,6 +148,13 @@ func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
 	}
 	if gotPayload[0].Events[0].Event != "cli_auth_error" {
 		t.Fatalf("event = %q, want %q", gotPayload[0].Events[0].Event, "cli_auth_error")
+	}
+	var params map[string]any
+	if err := json.Unmarshal([]byte(gotPayload[0].Events[0].Params), &params); err != nil {
+		t.Fatalf("params is not valid JSON string: %v", err)
+	}
+	if params["lark_cli_version"] != build.Version {
+		t.Fatalf("params.lark_cli_version = %v, want %q", params["lark_cli_version"], build.Version)
 	}
 }
 

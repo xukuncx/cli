@@ -400,8 +400,9 @@ func buildRemoteAuthPayload(event authEvent, userUniqueID string) ([]authRemoteR
 
 func buildRemoteAuthParams(event authEvent) (string, error) {
 	data := map[string]any{
-		"parent":  event.Parent,
-		"cmdline": event.Cmdline,
+		"parent":           event.Parent,
+		"cmdline":          event.Cmdline,
+		"lark_cli_version": build.Version,
 	}
 
 	switch event.Kind {
