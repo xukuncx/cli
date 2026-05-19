@@ -56,6 +56,7 @@ For ASCII output, the result is printed to stdout with fixed size.`,
 	return cmd
 }
 
+// runQRCode executes the auth qrcode command.
 func runQRCode(opts *QRCodeOptions) error {
 	if opts.URL == "" {
 		return output.Errorf(output.ExitValidation, "missing_url", "url is required")
@@ -76,6 +77,7 @@ func runQRCode(opts *QRCodeOptions) error {
 	return generateImageQRCode(opts.URL, opts.Size, opts.Output)
 }
 
+// generateImageQRCode encodes the URL as a PNG QR code and writes it to outputPath.
 func generateImageQRCode(url string, size int, outputPath string) error {
 	png, err := qrcode.Encode(url, qrcode.Medium, size)
 	if err != nil {
@@ -90,6 +92,7 @@ func generateImageQRCode(url string, size int, outputPath string) error {
 	return nil
 }
 
+// generateASCIIQRCode encodes the URL as an ASCII QR code and prints it to stdout.
 func generateASCIIQRCode(url string) error {
 	q, err := qrcode.New(url, qrcode.Medium)
 	if err != nil {
