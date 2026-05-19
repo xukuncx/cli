@@ -13,7 +13,7 @@ p, h1-h9, ul, ol, li, table, thead, tbody, tr, th, td, blockquote, pre, code, hr
 ## 容器标签
 |标签|说明|关键属性|
 |-|-|-|
-| `<callout>` | 高亮框，子块仅支持文本、标题、列表、待办、引用 | `emoji`(默认 bulb), `background-color`, `border-color`, `text-color` |
+| `<callout>` | 高亮框，子块支持文本、标题、列表、待办、引用、图片 | `emoji`(默认 bulb), `background-color`, `border-color`, `text-color` |
 | `<grid>` + `<column>` | 分栏布局，各列 width-ratio 之和为 1 | `width-ratio` |
 | `<whiteboard>` | 嵌入画板 | `type`: `mermaid` \| `plantuml` \| `blank` |
 | `<pre>` | （代码块，内含 `code`）| `lang`, `caption` |
@@ -26,7 +26,7 @@ p, h1-h9, ul, ol, li, table, thead, tbody, tr, th, td, blockquote, pre, code, hr
 | `<cite type="user">` | @人 | `<cite type="user" user-id="userID"></cite>` |
 | `<cite type="doc">` | @文档 | `<cite type="doc" doc-id="docx_token"></cite>` |
 | `<latex>` | 行内公式 | `<latex>E = mc^2</latex>` |
-| `<img>` | 图片（可独立成块或内联） | `<img width="800" height="600" caption="说明" name="图.png" href="http 或 https"/>` |
+| `<img>` | 图片（可独立成块或内联，也可放入 `<td>`/`<callout>`/`<column>` 等容器内） | `<img width="800" height="600" caption="说明" name="图.png" href="http 或 https"/>` |
 | `<source>` | 文件附件（可独立成块或内联） | `<source name="报告.pdf"/>` |
 | `<a type="url-preview">` | 预览卡片 | `<a type="url-preview" href="...">标题</a>` |
 | `<button>` | 操作按钮 | `background-color`、`src`，必须包含 `action=OpenLink\|DuplicatePage\|FollowPage` |

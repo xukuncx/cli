@@ -1,9 +1,9 @@
 
-# docs +media-insert（文档末尾插入图片/文件）
+# docs +media-insert（插入图片/文件到文档）
 
 > **前置条件：** 先阅读 [`../lark-shared/SKILL.md`](../../lark-shared/SKILL.md) 了解认证、全局参数和安全规则。
 
-把"创建空 block → 上传文件 → 设置 token"三步合并成一个命令，在**文档末尾**插入本地图片或文件。
+把"创建空 block → 上传文件 → 设置 token"三步合并成一个命令，在文档中插入本地图片或文件。默认追加到文档末尾；如需插入到表格单元格、callout 等容器 block 内部，使用[上传后移动](#插入图片到容器-block)工作流。
 
 ## 来源选择（Agent 必读）
 
@@ -100,7 +100,91 @@ lark-cli docs +media-insert --doc doxcnXXX --from-clipboard --align center --cap
 > [!CAUTION]
 > 这是**写入操作**（会修改文档内容）—— 执行前必须确认用户意图。
 
+## 插入图片到容器 block
+
+`+media-insert` 默认将图片插入到文档顶层（末尾或 `--selection-with-ellipsis` 匹配的顶层 block 附近），无法直接放入表格单元格、callout、grid column 等容器内部。通过"上传后移动"两步工作流可实现：
+
+### 工作流
+
+```
+Step 1: +media-insert 上传图片到文档末尾 → 得到 img block_id
+Step 2: +update block_move_after 将图片移入目标容器
+```
+
+### Step 1：上传图片
+
+```bash
+lark-cli docs +media-insert --doc doxcnXXX --file ./image.png --caption "架构图"
+# 返回: { "block_id": "blkImgXXX", "file_token": "filXXX", ... }
+```
+
+### Step 2：移动到容器内
+
+用 `docs +update --command block_move_after` 将图片移入目标容器。`--block-id` 指定容器内的锚点 block（图片将出现在锚点之后），`--src-block-ids` 指定 Step 1 返回的 img block_id。
+
+```bash
+# 移动图片到表格单元格内（锚点为单元格内的某个 block，如 <p>）
+lark-cli docs +update --api-version v2 --doc doxcnXXX \
+  --command block_move_after \
+  --block-id blkParagraphInTd \
+  --src-block-ids blkImgXXX
+
+# 移动图片到 callout 内
+lark-cli docs +update --api-version v2 --doc doxcnXXX \
+  --command block_move_after \
+  --block-id blkParagraphInCallout \
+  --src-block-ids blkImgXXX
+
+# 移动图片到 grid column 内
+lark-cli docs +update --api-version v2 --doc doxcnXXX \
+  --command block_move_after \
+  --block-id blkParagraphInColumn \
+  --src-block-ids blkImgXXX
+```
+
+> `block_move_after` 支持跨父节点移动，即从文档顶层移入容器 block 内部。详见 [`lark-doc-update.md`](lark-doc-update.md)。
+
+### 获取容器内的锚点 block_id
+
+使用 `docs +fetch --detail with-ids` 获取文档内容，从返回的 XML 中提取容器内目标位置的 block `id` 属性：
+
+```bash
+lark-cli docs +fetch --api-version v2 --doc doxcnXXX --detail with-ids
+```
+
+返回示例中，`<td>` 内的 `<p id="blkXXX">` 即可作为锚点：
+
+```xml
+<td vertical-align="top">
+  <p id="blkParagraphInTd">单元格文字</p>
+</td>
+```
+
+### 完整示例：插入图片到表格单元格
+
+```bash
+# 1. 先 fetch 获取目标单元格内的 block_id
+lark-cli docs +fetch --api-version v2 --doc doxcnXXX --detail with-ids
+
+# 2. 上传图片到文档末尾
+lark-cli docs +media-insert --doc doxcnXXX --file ./chart.png --caption "数据图表"
+# → block_id: blkNewImg
+
+# 3. 将图片移入表格单元格
+lark-cli docs +update --api-version v2 --doc doxcnXXX \
+  --command block_move_after \
+  --block-id blkCellParagraph \
+  --src-block-ids blkNewImg
+```
+
+### 注意事项
+
+- **两步非原子操作**：Step 1 成功但 Step 2 失败时，文档末尾会残留图片 block，需手动删除（`docs +update --command block_delete --block-id blkNewImg`）
+- **图片尺寸**：`+media-insert` 当前不支持 `--width`/`--height`，移动后图片保持默认尺寸。如需调整尺寸，可在移动后通过 `docs +update --command block_replace` 替换该 block 内容
+- **`--align` 和 `--caption`**：在 Step 1 设置即可，移动后保留
+
 ## 参考
 
-- [lark-doc-fetch](lark-doc-fetch.md) — 获取文档内容（可用于确认插入后的结果、以及提取媒体 token）
+- [lark-doc-fetch](lark-doc-fetch.md) — 获取文档内容（可用于确认插入后的结果、以及提取媒体 token 和 block_id）
+- [lark-doc-update](lark-doc-update.md) — 更新文档（`block_move_after` / `block_delete` 等指令）
 - [lark-shared](../../lark-shared/SKILL.md) — 认证和全局参数
