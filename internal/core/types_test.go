@@ -52,3 +52,24 @@ func TestResolveOpenBaseURL(t *testing.T) {
 		t.Errorf("ResolveOpenBaseURL(lark) = %q", got)
 	}
 }
+
+func TestResolveOpenBaseURL_RespectsEnvOverride(t *testing.T) {
+	t.Setenv("LARK_CLI_OPEN_API_BASE", "http://localhost:8080")
+	if got := ResolveOpenBaseURL(BrandFeishu); got != "http://localhost:8080" {
+		t.Errorf("env override ignored, got %q", got)
+	}
+}
+
+func TestResolveOpenBaseURL_EmptyEnvFallsBack(t *testing.T) {
+	t.Setenv("LARK_CLI_OPEN_API_BASE", "")
+	if got := ResolveOpenBaseURL(BrandFeishu); got != "https://open.feishu.cn" {
+		t.Errorf("empty env should fall back, got %q", got)
+	}
+}
+
+func TestResolveOpenBaseURL_WhitespaceEnvFallsBack(t *testing.T) {
+	t.Setenv("LARK_CLI_OPEN_API_BASE", "   ")
+	if got := ResolveOpenBaseURL(BrandFeishu); got != "https://open.feishu.cn" {
+		t.Errorf("whitespace env should fall back, got %q", got)
+	}
+}

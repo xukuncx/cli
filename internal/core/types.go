@@ -3,6 +3,11 @@
 
 package core
 
+import (
+	"os"
+	"strings"
+)
+
 // LarkBrand represents the Lark platform brand.
 // "feishu" targets China-mainland, "lark" targets international.
 // Any other string is treated as a custom base URL.
@@ -51,6 +56,12 @@ func ResolveEndpoints(brand LarkBrand) Endpoints {
 }
 
 // ResolveOpenBaseURL returns the Open API base URL for the given brand.
+// If LARK_CLI_OPEN_API_BASE env var is set (non-empty after trim), it overrides
+// the brand default. This is the supported way to redirect requests at a local
+// mock server during development; see the apps domain local-test plan §4.
 func ResolveOpenBaseURL(brand LarkBrand) string {
+	if v := strings.TrimSpace(os.Getenv("LARK_CLI_OPEN_API_BASE")); v != "" {
+		return v
+	}
 	return ResolveEndpoints(brand).Open
 }
