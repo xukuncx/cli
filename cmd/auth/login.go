@@ -453,6 +453,7 @@ func authLoginPollDeviceCode(opts *LoginOptions, config *core.CliConfig, msg *lo
 	return nil
 }
 
+// syncLoginUserToProfile persists the logged-in user info into the named profile.
 func syncLoginUserToProfile(profileName, appID, openID, userName string) error {
 	multi, err := core.LoadMultiAppConfig()
 	if err != nil {
@@ -478,6 +479,7 @@ func syncLoginUserToProfile(profileName, appID, openID, userName string) error {
 	return nil
 }
 
+// findProfileByName returns the AppConfig matching profileName, or nil.
 func findProfileByName(multi *core.MultiAppConfig, profileName string) *core.AppConfig {
 	for i := range multi.Apps {
 		if multi.Apps[i].ProfileName() == profileName {

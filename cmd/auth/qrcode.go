@@ -6,13 +6,13 @@ package auth
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/skip2/go-qrcode"
 	"github.com/spf13/cobra"
 
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/output"
+	"github.com/larksuite/cli/internal/vfs"
 )
 
 // QRCodeOptions holds inputs for auth qrcode command.
@@ -84,7 +84,7 @@ func generateImageQRCode(url string, size int, outputPath string) error {
 		return output.Errorf(output.ExitInternal, "encode_error", fmt.Sprintf("failed to encode QR code: %v", err))
 	}
 
-	err = os.WriteFile(outputPath, png, 0644)
+	err = vfs.WriteFile(outputPath, png, 0644)
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "write_error", fmt.Sprintf("failed to write QR code to %s: %v", outputPath, err))
 	}
