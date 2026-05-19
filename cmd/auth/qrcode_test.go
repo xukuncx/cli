@@ -91,6 +91,37 @@ func TestNewCmdAuthQRCode_ExactOneArg(t *testing.T) {
 	}
 }
 
+func TestNewCmdAuthQRCode_RunE_PNGEndToEnd(t *testing.T) {
+	f, _, _, _ := cmdutil.TestFactory(t, nil)
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "qr.png")
+
+	cmd := NewCmdAuthQRCode(f, nil)
+	cmd.SetArgs([]string{"https://example.com", "--output", outputPath})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("output file not created: %v", err)
+	}
+	if string(data[:4]) != "\x89PNG" {
+		t.Errorf("output does not start with PNG magic bytes, got %x", data[:4])
+	}
+}
+
+func TestNewCmdAuthQRCode_RunE_MissingOutput(t *testing.T) {
+	f, _, _, _ := cmdutil.TestFactory(t, nil)
+
+	cmd := NewCmdAuthQRCode(f, nil)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"https://example.com"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected error when --output is missing in PNG mode")
+	}
+}
+
 func TestNewCmdAuthQRCode_HelpText(t *testing.T) {
 	f, stdout, _, _ := cmdutil.TestFactory(t, nil)
 
