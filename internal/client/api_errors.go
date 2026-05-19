@@ -19,6 +19,12 @@ const rawAPIJSONHint = "The endpoint may have returned an empty or non-standard 
 // WrapDoAPIError upgrades malformed JSON decode errors from the SDK into
 // actionable API errors for raw `lark-cli api` calls. All other failures
 // remain network errors.
+//
+// Deprecated: legacy *output.ExitError wire shape (api_error + rawAPIJSONHint
+// on JSON-decode, network otherwise). Preserved so SDK Do() callers keep
+// the original envelope until per-domain migration to typed errors. New
+// code should route through APIClient.CheckResponse (typed *errs.APIError)
+// or construct *errs.NetworkError / *errs.InternalError directly.
 func WrapDoAPIError(err error) error {
 	if err == nil {
 		return nil
@@ -32,6 +38,11 @@ func WrapDoAPIError(err error) error {
 
 // WrapJSONResponseParseError upgrades empty or malformed JSON response bodies
 // into API errors with hints instead of generic parse failures.
+//
+// Deprecated: legacy *output.ExitError wire shape (api_error + ExitAPI +
+// rawAPIJSONHint). The 3-branch behaviour is preserved so existing callers
+// of internal/client/response.go keep emitting the same envelope until
+// per-domain migration to typed errors.
 func WrapJSONResponseParseError(err error, body []byte) error {
 	if err == nil {
 		return nil

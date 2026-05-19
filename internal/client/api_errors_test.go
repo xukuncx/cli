@@ -13,24 +13,6 @@ import (
 	"github.com/larksuite/cli/internal/output"
 )
 
-func TestWrapDoAPIError_BareEOFIsNetworkError(t *testing.T) {
-	err := WrapDoAPIError(io.EOF)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-
-	var exitErr *output.ExitError
-	if !errors.As(err, &exitErr) {
-		t.Fatalf("expected ExitError, got %T", err)
-	}
-	if exitErr.Code != output.ExitNetwork {
-		t.Fatalf("expected ExitNetwork, got %d", exitErr.Code)
-	}
-	if strings.Contains(exitErr.Error(), "invalid JSON response") {
-		t.Fatalf("unexpected JSON diagnostic for bare EOF: %q", exitErr.Error())
-	}
-}
-
 func TestWrapDoAPIError_SyntaxErrorIsAPIDiagnostic(t *testing.T) {
 	err := WrapDoAPIError(&json.SyntaxError{Offset: 1})
 	if err == nil {

@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/larksuite/cli/errs"
+	"github.com/larksuite/cli/internal/errclass"
 	"github.com/larksuite/cli/internal/util"
 )
 
@@ -87,32 +89,55 @@ func (t *SecurityPolicyTransport) RoundTrip(req *http.Request) (*http.Response, 
 
 // tryHandleMCPResponse attempts to parse a JSON-RPC (MCP) formatted error response.
 func (t *SecurityPolicyTransport) tryHandleMCPResponse(result map[string]interface{}) error {
-	// MCP (JSON-RPC) response format:
+	// MCP (JSON-RPC) response format produced by errs/projection/mcp.go:
 	// {
 	//   "error": {
-	//     "code": 21000,
+	//     "code": -32603,                       // JSON-RPC outer code
 	//     "message": "...",
-	//     "data": { "challenge_url": "...", "cli_hint": "..." }
+	//     "data": {
+	//       "code": 21000,                      // Lark code lives here
+	//       "type": "policy",
+	//       "subtype": "challenge_required",
+	//       "challenge_url": "...",
+	//       "hint": "..."                       // canonical hint key
+	//     }
 	//   }
 	// }
+	// Older / hand-built MCP shapes carried the Lark code in the outer
+	// `error.code` field; we still accept that as a fallback so policy
+	// detection survives legacy producers.
 	errMap, ok := result["error"].(map[string]interface{})
 	if !ok {
 		return nil
 	}
 
-	code := getInt(errMap, "code", 0)
-	if code != LarkErrBlockByPolicyTryAuth && code != LarkErrBlockByPolicy {
+	dataMap, _ := errMap["data"].(map[string]interface{})
+
+	// Prefer data.code (current spec); fall back to outer error.code (legacy
+	// MCP producers that put the Lark code at the outer slot).
+	code := 0
+	if dataMap != nil {
+		code = getInt(dataMap, "code", 0)
+	}
+	if code == 0 {
+		code = getInt(errMap, "code", 0)
+	}
+	meta, ok := errclass.LookupCodeMeta(code)
+	if !ok || meta.Category != errs.CategoryPolicy {
 		return nil
 	}
 
-	dataMap, ok := errMap["data"].(map[string]interface{})
-	if !ok {
+	if dataMap == nil {
 		return nil
 	}
 
 	// Clean up backticks and spaces from challenge_url
 	challengeUrl := strings.Trim(getStr(dataMap, "challenge_url"), " `")
-	cliHint := getStr(dataMap, "cli_hint")
+	// Prefer canonical `hint`; fall back to `cli_hint` for legacy producers.
+	cliHint := getStr(dataMap, "hint")
+	if cliHint == "" {
+		cliHint = getStr(dataMap, "cli_hint")
+	}
 	msg := getStr(errMap, "message")
 
 	if challengeUrl != "" || cliHint != "" {
@@ -122,11 +147,15 @@ func (t *SecurityPolicyTransport) tryHandleMCPResponse(result map[string]interfa
 		}
 
 		if challengeUrl != "" || cliHint != "" {
-			return &SecurityPolicyError{
-				Code:         code,
-				Message:      msg,
+			return &errs.SecurityPolicyError{
+				Problem: errs.Problem{
+					Category: errs.CategoryPolicy,
+					Subtype:  meta.Subtype,
+					Code:     code,
+					Message:  msg,
+					Hint:     cliHint,
+				},
 				ChallengeURL: challengeUrl,
-				CLIHint:      cliHint,
 			}
 		}
 	}
@@ -146,8 +175,9 @@ func (t *SecurityPolicyTransport) tryHandleOAPIResponse(result map[string]interf
 		}
 	}
 
-	// 2. Check if it's a security policy error
-	if code != LarkErrBlockByPolicyTryAuth && code != LarkErrBlockByPolicy {
+	// 2. Check if it's a security policy error (consult central code registry)
+	meta, ok := errclass.LookupCodeMeta(code)
+	if !ok || meta.Category != errs.CategoryPolicy {
 		return nil
 	}
 
@@ -173,11 +203,15 @@ func (t *SecurityPolicyTransport) tryHandleOAPIResponse(result map[string]interf
 		}
 
 		if msg != "" || challengeUrl != "" || cliHint != "" {
-			return &SecurityPolicyError{
-				Code:         code,
-				Message:      msg,
+			return &errs.SecurityPolicyError{
+				Problem: errs.Problem{
+					Category: errs.CategoryPolicy,
+					Subtype:  meta.Subtype,
+					Code:     code,
+					Message:  msg,
+					Hint:     cliHint,
+				},
 				ChallengeURL: challengeUrl,
-				CLIHint:      cliHint,
 			}
 		}
 	}

@@ -45,20 +45,32 @@ linters:
       - path: _test\.go$
         linters:
           - bodyclose
-          - bidichk
           - gocritic
           - depguard
           - forbidigo
-      - path-except: (shortcuts/|internal/)
+      - path-except: (shortcuts/|internal/|cmd/service/)
         linters:
           - forbidigo
       - path: internal/vfs/
+        linters:
+          - forbidigo
+      # internal/lintcheck/ is a build-time CI tool that walks source files;
+      # it legitimately uses os / filepath directly and is not a runtime path.
+      - path: internal/lintcheck/
         linters:
           - forbidigo
       # The shortcuts-no-raw-http forbidigo rule below is shortcuts-only;
       # internal/ legitimately wraps raw HTTP for the client / credential layer.
       - path-except: shortcuts/
         text: shortcuts-no-raw-http
+        linters:
+          - forbidigo
+      # The errs-typed-only rule (Rule A, errs/ contract guards) only fires on
+      # the business path: shortcuts/** and cmd/service/**. cmd/api, cmd/auth,
+      # cmd/event, internal/output, internal/client and root.go are dispatcher
+      # / framework paths that may legitimately call the output constructors.
+      - path-except: (shortcuts/|cmd/service/)
+        text: errs-typed-only
         linters:
           - forbidigo
 
@@ -79,6 +91,25 @@ linters:
                 Use runtime.FileIO() for file operations or runtime.ValidatePath() for path validation.
     forbidigo:
       forbid:
+        # ── errs/: business path must produce typed *errs.* errors ──
+        # Path-scoped to shortcuts/** and cmd/service/** via the exclusion rule
+        # above; dispatcher / framework paths (cmd/api, cmd/auth, cmd/event,
+        # internal/output, internal/client, cmd/root.go) keep direct access.
+        # CI runs golangci-lint with --new-from-rev=origin/main so this only
+        # blocks new diffs — existing unmigrated call sites stay green.
+        - pattern: output\.(ErrAPI|Errorf|ErrWithHint|ErrBare|ClassifyLarkError)\b
+          msg: >-
+            [errs-typed-only] business path must not call legacy output.* error
+            constructors (ErrAPI / Errorf / ErrWithHint / ErrBare / ClassifyLarkError).
+            Construct a typed *errs.XxxError directly (see errs/ERROR_CONTRACT.md
+            Quick reference). The errclass.BuildAPIError classifier is shipped
+            for stage 2+ — APIClient.CheckResponse will route through it once
+            the per-domain typed migration lands.
+        - pattern: output\.(ExitError|ErrDetail)\{
+          msg: >-
+            [errs-typed-only] business path must not construct legacy
+            *output.ExitError / output.ErrDetail literals. Return a typed
+            *errs.XxxError instead (see errs/ERROR_CONTRACT.md Quick reference).
         # ── http: shortcuts must not construct raw HTTP requests ──
         # Bans request / client construction; constants (http.MethodPost,
         # http.StatusOK) and pure helpers (http.StatusText, http.Header) are

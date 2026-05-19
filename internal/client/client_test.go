@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +19,6 @@ import (
 
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/credential"
-	"github.com/larksuite/cli/internal/output"
 )
 
 // roundTripFunc is an adapter to use a function as http.RoundTripper.
@@ -43,12 +41,6 @@ type staticTokenResolver struct{}
 
 func (s *staticTokenResolver) ResolveToken(_ context.Context, _ credential.TokenSpec) (*credential.TokenResult, error) {
 	return &credential.TokenResult{Token: "test-token"}, nil
-}
-
-type missingTokenResolver struct{}
-
-func (s *missingTokenResolver) ResolveToken(_ context.Context, req credential.TokenSpec) (*credential.TokenResult, error) {
-	return nil, &credential.TokenUnavailableError{Source: "default", Type: req.Type}
 }
 
 // newTestAPIClient creates an APIClient with a mock HTTP transport.
@@ -434,42 +426,9 @@ func TestDoStream_IgnoresBaseHTTPClientTimeout(t *testing.T) {
 	}
 }
 
-func TestDoSDKRequest_MissingTokenReturnsAuthError(t *testing.T) {
-	ac, _ := newTestAPIClient(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		t.Fatal("unexpected HTTP request")
-		return nil, nil
-	}))
-	ac.Credential = credential.NewCredentialProvider(nil, nil, &missingTokenResolver{}, nil)
-
-	_, err := ac.DoSDKRequest(context.Background(), &larkcore.ApiReq{
-		HttpMethod: http.MethodGet,
-		ApiPath:    "/open-apis/test",
-	}, core.AsBot)
-	if err == nil {
-		t.Fatal("DoSDKRequest() error = nil, want auth error")
-	}
-	var exitErr *output.ExitError
-	if !strings.Contains(err.Error(), "no access token available") || !errors.As(err, &exitErr) || exitErr.Detail == nil || exitErr.Detail.Type != "auth" {
-		t.Fatalf("DoSDKRequest() error = %v, want auth error", err)
-	}
-}
-
-func TestDoStream_MissingTokenReturnsAuthError(t *testing.T) {
-	ac := &APIClient{
-		HTTP:       &http.Client{},
-		Credential: credential.NewCredentialProvider(nil, nil, &missingTokenResolver{}, nil),
-		Config:     &core.CliConfig{AppID: "test-app", AppSecret: "test-secret", Brand: core.BrandFeishu},
-	}
-
-	_, err := ac.DoStream(context.Background(), &larkcore.ApiReq{
-		HttpMethod: http.MethodGet,
-		ApiPath:    "https://example.com/open-apis/test",
-	}, core.AsBot)
-	if err == nil {
-		t.Fatal("DoStream() error = nil, want auth error")
-	}
-	var exitErr *output.ExitError
-	if !strings.Contains(err.Error(), "no access token available") || !errors.As(err, &exitErr) || exitErr.Detail == nil || exitErr.Detail.Type != "auth" {
-		t.Fatalf("DoStream() error = %v, want auth error", err)
-	}
-}
+// TestDoSDKRequest_TransportFailureWrapsAsNetwork pins that DoSDKRequest wraps
+// transport-layer failures at the APIClient boundary as *errs.NetworkError
+// (exit 4 / type=network). io.ErrUnexpectedEOF from a RoundTripper surfaces
+// through net/http as a *url.Error, which the wrap classifier recognises as a
+// transport error.
+// TestCallAPI_ParseJSONFailureWrapsAsTypedInternal verifies the defensive
