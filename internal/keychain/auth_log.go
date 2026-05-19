@@ -5,8 +5,12 @@ package keychain
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,15 +19,96 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/larksuite/cli/internal/build"
 	"github.com/larksuite/cli/internal/validate"
 	"github.com/larksuite/cli/internal/vfs"
 )
+
+const (
+	authLogRemoteCaller  = "larksuite-cli"
+	authLogRemoteAppID   = 1011422
+	authLogRemoteTimeout = 3 * time.Second
+)
+
+type authEventKind string
+
+const (
+	authEventResponse authEventKind = "auth_response"
+	authEventError    authEventKind = "auth_error"
+)
+
+type authEvent struct {
+	Kind      authEventKind
+	Time      time.Time
+	Parent    string
+	Cmdline   string
+	Path      string
+	Status    int
+	LogID     string
+	Component string
+	Op        string
+	Error     string
+}
+
+type authRemoteRequestItem struct {
+	User   authRemoteUser    `json:"user"`
+	Header authRemoteHeader  `json:"header"`
+	Events []authRemoteEvent `json:"events"`
+	Caller string            `json:"caller"`
+}
+
+type authRemoteUser struct {
+	DeviceID     string `json:"device_id"`
+	UserID       int64  `json:"user_id"`
+	UserUniqueID string `json:"user_unique_id"`
+}
+
+type authRemoteHeader struct {
+	AppID        int64          `json:"app_id"`
+	AppName      string         `json:"app_name"`
+	AppVersion   string         `json:"app_version"`
+	AppChannel   string         `json:"app_channel"`
+	DeviceModel  string         `json:"device_model"`
+	OSName       string         `json:"os_name"`
+	ABSDKVersion string         `json:"ab_sdk_version"`
+	Custom       map[string]any `json:"custom"`
+}
+
+type authRemoteEvent struct {
+	Event       string `json:"event"`
+	Params      string `json:"params"`
+	Time        int64  `json:"time"`
+	LocalTimeMS int64  `json:"local_time_ms"`
+}
 
 // RuntimeDirFunc returns the workspace-aware config directory.
 // Default: falls back to LARKSUITE_CLI_CONFIG_DIR or ~/.lark-cli (pre-workspace behavior).
 // Injected by cmdutil.NewDefault → core.GetRuntimeDir after workspace detection.
 // This avoids an import cycle (core → keychain → core).
 var RuntimeDirFunc = defaultRuntimeDir
+
+// AuthLogUserUniqueIDProvider returns the persistent user_unique_id used by the
+// auth log remote sink.
+// Default: disabled provider that reports configuration is unavailable.
+// Injected by cmdutil.NewDefault after workspace/config setup.
+// This avoids an import cycle (core → keychain → core).
+var AuthLogUserUniqueIDProvider = defaultAuthLogUserUniqueIDProvider
+
+// AuthLogRemoteEndpointProvider returns the telemetry endpoint and whether
+// remote reporting is enabled for the current runtime context.
+// Default: disabled provider so telemetry stays off before factory injection.
+// Injected by cmdutil.NewDefault after workspace/config setup.
+// This avoids an import cycle (core → keychain → core).
+var AuthLogRemoteEndpointProvider = defaultAuthLogRemoteEndpointProvider
+
+func defaultAuthLogUserUniqueIDProvider() (string, error) {
+	return "", fmt.Errorf("auth log user unique id provider is not configured")
+}
+
+func defaultAuthLogRemoteEndpointProvider() (string, bool) {
+	return "", false
+}
 
 func defaultRuntimeDir() string {
 	if dir := os.Getenv("LARKSUITE_CLI_CONFIG_DIR"); dir != "" {
@@ -48,6 +133,9 @@ var (
 
 	authResponseLogNow  = time.Now
 	authResponseLogArgs = func() []string { return os.Args }
+
+	authRemoteEnabled = true
+	authRemoteClient  = &http.Client{Timeout: authLogRemoteTimeout}
 )
 
 func authLogDir() string {
@@ -161,41 +249,197 @@ func getParentProcessNameWindows(ppid int) string {
 }
 
 func LogAuthResponse(path string, status int, logID string) {
-	initAuthLogger()
-	if authResponseLogger == nil {
-		return
-	}
-
-	authResponseLogger.Printf(
-		"[lark-cli] auth-response: time=%s path=%s status=%d x-tt-logid=%s parent=%s cmdline=%s",
-		authResponseLogNow().Format(time.RFC3339Nano),
-		path,
-		status,
-		logID,
-		getParentProcessName(),
-		FormatAuthCmdline(authResponseLogArgs()),
-	)
+	emitAuthEvent(authEvent{
+		Kind:    authEventResponse,
+		Time:    authResponseLogNow(),
+		Parent:  getParentProcessName(),
+		Cmdline: FormatAuthCmdline(authResponseLogArgs()),
+		Path:    path,
+		Status:  status,
+		LogID:   logID,
+	})
 }
 
 func LogAuthError(component, op string, err error) {
 	if err == nil {
 		return
 	}
+	emitAuthEvent(authEvent{
+		Kind:      authEventError,
+		Time:      authResponseLogNow(),
+		Parent:    getParentProcessName(),
+		Cmdline:   FormatAuthCmdline(authResponseLogArgs()),
+		Component: component,
+		Op:        op,
+		Error:     err.Error(),
+	})
+}
+
+func emitAuthEvent(event authEvent) {
+	emitLocalAuthEvent(event)
+	emitRemoteAuthEvent(event)
+}
+
+func emitLocalAuthEvent(event authEvent) {
 
 	initAuthLogger()
 	if authResponseLogger == nil {
 		return
 	}
 
-	authResponseLogger.Printf(
-		"[lark-cli] auth-error: time=%s component=%s op=%s error=%q parent=%s cmdline=%s",
-		authResponseLogNow().Format(time.RFC3339Nano),
-		component,
-		op,
-		err.Error(),
-		getParentProcessName(),
-		FormatAuthCmdline(authResponseLogArgs()),
-	)
+	switch event.Kind {
+	case authEventResponse:
+		authResponseLogger.Printf(
+			"[lark-cli] auth-response: time=%s path=%s status=%d x-tt-logid=%s parent=%s cmdline=%s",
+			event.Time.Format(time.RFC3339Nano),
+			event.Path,
+			event.Status,
+			event.LogID,
+			event.Parent,
+			event.Cmdline,
+		)
+	case authEventError:
+		authResponseLogger.Printf(
+			"[lark-cli] auth-error: time=%s component=%s op=%s error=%q parent=%s cmdline=%s",
+			event.Time.Format(time.RFC3339Nano),
+			event.Component,
+			event.Op,
+			event.Error,
+			event.Parent,
+			event.Cmdline,
+		)
+	}
+}
+
+func emitRemoteAuthEvent(event authEvent) {
+	endpoint, ok := AuthLogRemoteEndpointProvider()
+	if !authRemoteEnabled || !ok || endpoint == "" {
+		return
+	}
+
+	defer func() {
+		_ = recover()
+	}()
+
+	_ = postRemoteAuthEvent(event, endpoint)
+}
+
+func postRemoteAuthEvent(event authEvent, endpoint string) error {
+	userUniqueID, err := AuthLogUserUniqueIDProvider()
+	if err != nil || strings.TrimSpace(userUniqueID) == "" {
+		fallbackID, fallbackErr := uuid.NewV7()
+		if fallbackErr != nil {
+			return fallbackErr
+		}
+		userUniqueID = fallbackID.String()
+	}
+
+	payload, err := buildRemoteAuthPayload(event, userUniqueID)
+	if err != nil {
+		return err
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), authLogRemoteTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := authRemoteClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("auth log remote sink returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func buildRemoteAuthPayload(event authEvent, userUniqueID string) ([]authRemoteRequestItem, error) {
+	params, err := buildRemoteAuthParams(event)
+	if err != nil {
+		return nil, err
+	}
+
+	item := authRemoteRequestItem{
+		User: authRemoteUser{
+			DeviceID:     "",
+			UserID:       0,
+			UserUniqueID: userUniqueID,
+		},
+		Header: authRemoteHeader{
+			AppID:        authLogRemoteAppID,
+			AppName:      "",
+			AppVersion:   build.Version,
+			AppChannel:   "",
+			DeviceModel:  "",
+			OSName:       authLogOSName(),
+			ABSDKVersion: "",
+			Custom:       map[string]any{},
+		},
+		Events: []authRemoteEvent{{
+			Event:       authRemoteEventName(event),
+			Params:      params,
+			Time:        event.Time.Unix(),
+			LocalTimeMS: event.Time.UnixMilli(),
+		}},
+		Caller: authLogRemoteCaller,
+	}
+	return []authRemoteRequestItem{item}, nil
+}
+
+func buildRemoteAuthParams(event authEvent) (string, error) {
+	data := map[string]any{
+		"parent":  event.Parent,
+		"cmdline": event.Cmdline,
+	}
+
+	switch event.Kind {
+	case authEventResponse:
+		data["path"] = event.Path
+		data["status"] = event.Status
+		data["x_tt_logid"] = event.LogID
+	case authEventError:
+		data["component"] = event.Component
+		data["op"] = event.Op
+		data["error"] = event.Error
+	}
+
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func authRemoteEventName(event authEvent) string {
+	if event.Kind == authEventError {
+		return "cli_auth_error"
+	}
+	return "cli_auth_response"
+}
+
+func authLogOSName() string {
+	switch runtime.GOOS {
+	case "windows":
+		return "Windows"
+	case "darwin":
+		return "macOS"
+	case "linux":
+		return "Linux"
+	default:
+		return runtime.GOOS
+	}
 }
 
 func SetAuthLogHooksForTest(logger *log.Logger, now func() time.Time, args func() []string) func() {
@@ -203,9 +447,11 @@ func SetAuthLogHooksForTest(logger *log.Logger, now func() time.Time, args func(
 	prevNow := authResponseLogNow
 	prevArgs := authResponseLogArgs
 	prevOnce := authResponseLoggerOnce
+	prevRemoteEnabled := authRemoteEnabled
 
 	authResponseLogger = logger
 	authResponseLoggerOnce = &sync.Once{}
+	authRemoteEnabled = false
 
 	if now != nil {
 		authResponseLogNow = now
@@ -219,6 +465,32 @@ func SetAuthLogHooksForTest(logger *log.Logger, now func() time.Time, args func(
 		authResponseLogNow = prevNow
 		authResponseLogArgs = prevArgs
 		authResponseLoggerOnce = prevOnce
+		authRemoteEnabled = prevRemoteEnabled
+	}
+}
+
+func setAuthLogRemoteHooksForTest(client *http.Client, endpointProvider func() (string, bool), provider func() (string, error), enabled bool) func() {
+	prevClient := authRemoteClient
+	prevEndpointProvider := AuthLogRemoteEndpointProvider
+	prevProvider := AuthLogUserUniqueIDProvider
+	prevEnabled := authRemoteEnabled
+
+	if client != nil {
+		authRemoteClient = client
+	}
+	if endpointProvider != nil {
+		AuthLogRemoteEndpointProvider = endpointProvider
+	}
+	if provider != nil {
+		AuthLogUserUniqueIDProvider = provider
+	}
+	authRemoteEnabled = enabled
+
+	return func() {
+		authRemoteClient = prevClient
+		AuthLogRemoteEndpointProvider = prevEndpointProvider
+		AuthLogUserUniqueIDProvider = prevProvider
+		authRemoteEnabled = prevEnabled
 	}
 }
 

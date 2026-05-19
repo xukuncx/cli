@@ -19,6 +19,9 @@ func TestResolveEndpoints_Feishu(t *testing.T) {
 	if ep.AppLink != "https://applink.feishu.cn" {
 		t.Errorf("AppLink = %q, want feishu.cn", ep.AppLink)
 	}
+	if ep.Telemetry != "https://mcs-bd.feishu.cn/v1/list" {
+		t.Errorf("Telemetry = %q, want mcs-bd.feishu.cn", ep.Telemetry)
+	}
 }
 
 func TestResolveEndpoints_Lark(t *testing.T) {
@@ -35,6 +38,9 @@ func TestResolveEndpoints_Lark(t *testing.T) {
 	if ep.AppLink != "https://applink.larksuite.com" {
 		t.Errorf("AppLink = %q, want larksuite.com", ep.AppLink)
 	}
+	if ep.Telemetry != "" {
+		t.Errorf("Telemetry = %q, want empty", ep.Telemetry)
+	}
 }
 
 func TestResolveEndpoints_EmptyDefaultsToFeishu(t *testing.T) {
@@ -50,5 +56,14 @@ func TestResolveOpenBaseURL(t *testing.T) {
 	}
 	if got := ResolveOpenBaseURL(BrandLark); got != "https://open.larksuite.com" {
 		t.Errorf("ResolveOpenBaseURL(lark) = %q", got)
+	}
+}
+
+func TestResolveTelemetryEndpoint(t *testing.T) {
+	if got := ResolveTelemetryEndpoint(BrandFeishu); got != "https://mcs-bd.feishu.cn/v1/list" {
+		t.Errorf("ResolveTelemetryEndpoint(feishu) = %q", got)
+	}
+	if got := ResolveTelemetryEndpoint(BrandLark); got != "" {
+		t.Errorf("ResolveTelemetryEndpoint(lark) = %q", got)
 	}
 }
