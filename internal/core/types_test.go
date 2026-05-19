@@ -45,6 +45,9 @@ func TestResolveEndpoints_EmptyDefaultsToFeishu(t *testing.T) {
 }
 
 func TestResolveOpenBaseURL(t *testing.T) {
+	// Defensive: clear LARK_CLI_OPEN_API_BASE in case the shell has it set
+	// (e.g. developer running mock-server workflow per local-test-plan §4).
+	t.Setenv("LARK_CLI_OPEN_API_BASE", "")
 	if got := ResolveOpenBaseURL(BrandFeishu); got != "https://open.feishu.cn" {
 		t.Errorf("ResolveOpenBaseURL(feishu) = %q", got)
 	}
