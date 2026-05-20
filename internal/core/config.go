@@ -58,11 +58,10 @@ func (a *AppConfig) ProfileName() string {
 
 // MultiAppConfig is the multi-app config file format.
 type MultiAppConfig struct {
-	UserUniqueID string      `json:"userUniqueId,omitempty"`
-	StrictMode   StrictMode  `json:"strictMode,omitempty"`
-	CurrentApp   string      `json:"currentApp,omitempty"`
-	PreviousApp  string      `json:"previousApp,omitempty"`
-	Apps         []AppConfig `json:"apps"`
+	StrictMode  StrictMode  `json:"strictMode,omitempty"`
+	CurrentApp  string      `json:"currentApp,omitempty"`
+	PreviousApp string      `json:"previousApp,omitempty"`
+	Apps        []AppConfig `json:"apps"`
 }
 
 // CurrentAppConfig returns the currently active app config.

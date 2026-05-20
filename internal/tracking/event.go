@@ -23,6 +23,7 @@ import (
 	"github.com/larksuite/cli/internal/build"
 	"github.com/larksuite/cli/internal/validate"
 	"github.com/larksuite/cli/internal/vfs"
+	"github.com/larksuite/cli/internal/vfs/localfileio"
 )
 
 const (
@@ -124,11 +125,11 @@ func loadOrCreateUserUniqueID() (string, error) {
 	}
 	id := newID.String()
 
-	// Persist
+	// Persist via atomic write (safe across processes)
 	if err := vfs.MkdirAll(dir, 0700); err != nil {
 		return "", fmt.Errorf("create cache dir: %w", err)
 	}
-	if err := vfs.WriteFile(idFile, []byte(id+"\n"), 0600); err != nil {
+	if err := localfileio.AtomicWrite(idFile, []byte(id+"\n"), 0600); err != nil {
 		return "", fmt.Errorf("write user unique id: %w", err)
 	}
 	return id, nil

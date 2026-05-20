@@ -212,4 +212,3 @@ func TestNewDefault_FileIOProviderDoesNotResolveDuringInitialization(t *testing.
 		t.Fatalf("ResolveFileIO() calls after explicit resolve = %d, want 1", provider.resolveCalls)
 	}
 }
-
