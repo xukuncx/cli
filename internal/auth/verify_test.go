@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/larksuite/cli/internal/keychain"
+	"github.com/larksuite/cli/internal/tracking"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
@@ -86,7 +86,7 @@ func TestVerifyUserToken(t *testing.T) {
 			)
 
 			var buf bytes.Buffer
-			restore := keychain.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
+			restore := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
 				return time.Date(2026, 4, 2, 3, 4, 5, 0, time.UTC)
 			}, func() []string {
 				return []string{"lark-cli", "auth", "status"}

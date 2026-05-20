@@ -6,7 +6,7 @@ package auth
 import (
 	"net/http"
 
-	"github.com/larksuite/cli/internal/keychain"
+	"github.com/larksuite/cli/internal/tracking"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
 
@@ -22,7 +22,7 @@ func logHTTPResponse(resp *http.Response) {
 		path = resp.Request.URL.Path
 	}
 
-	keychain.LogAuthResponse(path, resp.StatusCode, resp.Header.Get("x-tt-logid"))
+	tracking.LogAuthResponse(path, resp.StatusCode, resp.Header.Get("x-tt-logid"))
 }
 
 // logSDKResponse logs the SDK response details for an authentication request.
@@ -33,9 +33,9 @@ func logSDKResponse(path string, apiResp *larkcore.ApiResp) {
 	}
 
 	if apiResp == nil {
-		keychain.LogAuthResponse(path, 0, "")
+		tracking.LogAuthResponse(path, 0, "")
 		return
 	}
 
-	keychain.LogAuthResponse(path, apiResp.StatusCode, apiResp.Header.Get("x-tt-logid"))
+	tracking.LogAuthResponse(path, apiResp.StatusCode, apiResp.Header.Get("x-tt-logid"))
 }

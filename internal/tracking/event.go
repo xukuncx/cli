@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lark Technologies Pte. Ltd.
 // SPDX-License-Identifier: MIT
 
-package keychain
+package tracking
 
 import (
 	"bytes"
@@ -85,21 +85,21 @@ type authRemoteEvent struct {
 // RuntimeDirFunc returns the workspace-aware config directory.
 // Default: falls back to LARKSUITE_CLI_CONFIG_DIR or ~/.lark-cli (pre-workspace behavior).
 // Injected by cmdutil.NewDefault → core.GetRuntimeDir after workspace detection.
-// This avoids an import cycle (core → keychain → core).
+// This avoids an import cycle (core → tracking → core).
 var RuntimeDirFunc = defaultRuntimeDir
 
 // AuthLogUserUniqueIDProvider returns the persistent user_unique_id used by the
 // auth log remote sink.
 // Default: disabled provider that reports configuration is unavailable.
 // Injected by cmdutil.NewDefault after workspace/config setup.
-// This avoids an import cycle (core → keychain → core).
+// This avoids an import cycle (core → tracking → core).
 var AuthLogUserUniqueIDProvider = defaultAuthLogUserUniqueIDProvider
 
 // AuthLogRemoteEndpointProvider returns the telemetry endpoint and whether
 // remote reporting is enabled for the current runtime context.
 // Default: disabled provider so telemetry stays off before factory injection.
 // Injected by cmdutil.NewDefault after workspace/config setup.
-// This avoids an import cycle (core → keychain → core).
+// This avoids an import cycle (core → tracking → core).
 var AuthLogRemoteEndpointProvider = defaultAuthLogRemoteEndpointProvider
 
 func defaultAuthLogUserUniqueIDProvider() (string, error) {
@@ -116,12 +116,6 @@ func defaultRuntimeDir() string {
 	}
 	home, err := vfs.UserHomeDir()
 	if err != nil || home == "" {
-		// Silent fallback to a relative ".lark-cli": this package has no
-		// IOStreams in scope, so we cannot surface a warning here without
-		// violating the IOStreams injection boundary (enforced by lint).
-		// Users who hit this path should set LARKSUITE_CLI_CONFIG_DIR
-		// explicitly; the relative path will otherwise surface as an
-		// explicit I/O error at first use.
 		home = ""
 	}
 	return filepath.Join(home, ".lark-cli")
@@ -139,8 +133,6 @@ var (
 )
 
 func authLogDir() string {
-	// LARKSUITE_CLI_LOG_DIR is the highest-priority override.
-	// When set, it bypasses workspace subtree routing entirely.
 	if dir := os.Getenv("LARKSUITE_CLI_LOG_DIR"); dir != "" {
 		safeDir, err := validate.SafeEnvDirPath(dir, "LARKSUITE_CLI_LOG_DIR")
 		if err == nil {
@@ -148,9 +140,6 @@ func authLogDir() string {
 		}
 	}
 
-	// Fall back to the workspace-aware runtime dir. RuntimeDirFunc is injected
-	// by factory after workspace detection; before injection it defaults to
-	// the pre-workspace behavior so older call paths remain correct.
 	return filepath.Join(RuntimeDirFunc(), "logs")
 }
 
@@ -470,7 +459,7 @@ func SetAuthLogHooksForTest(logger *log.Logger, now func() time.Time, args func(
 	}
 }
 
-func setAuthLogRemoteHooksForTest(client *http.Client, endpointProvider func() (string, bool), provider func() (string, error), enabled bool) func() {
+func SetAuthLogRemoteHooksForTest(client *http.Client, endpointProvider func() (string, bool), provider func() (string, error), enabled bool) func() {
 	prevClient := authRemoteClient
 	prevEndpointProvider := AuthLogRemoteEndpointProvider
 	prevProvider := AuthLogUserUniqueIDProvider
@@ -527,4 +516,13 @@ func cleanupOldLogs(dir string, now time.Time) {
 			_ = vfs.Remove(filepath.Join(dir, entry.Name()))
 		}
 	}
+}
+
+const telemetryEndpointFeishu = "https://mcs-bd.feishu.cn/v1/list"
+
+func ResolveTelemetryEndpoint(brand string) string {
+	if brand == "lark" {
+		return ""
+	}
+	return telemetryEndpointFeishu
 }

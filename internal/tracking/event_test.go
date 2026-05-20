@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Lark Technologies Pte. Ltd.
 // SPDX-License-Identifier: MIT
 
-package keychain
+package tracking
 
 import (
 	"encoding/json"
@@ -16,8 +16,6 @@ import (
 	"github.com/larksuite/cli/internal/build"
 )
 
-// TestAuthLogDir_UsesValidatedLogDirEnv verifies that a valid absolute
-// LARKSUITE_CLI_LOG_DIR is normalized and used as the auth log directory.
 func TestAuthLogDir_UsesValidatedLogDirEnv(t *testing.T) {
 	base := t.TempDir()
 	base, _ = filepath.EvalSymlinks(base)
@@ -31,8 +29,6 @@ func TestAuthLogDir_UsesValidatedLogDirEnv(t *testing.T) {
 	}
 }
 
-// TestAuthLogDir_InvalidLogDirFallsBackToConfigDir verifies that an invalid
-// LARKSUITE_CLI_LOG_DIR falls back to LARKSUITE_CLI_CONFIG_DIR/logs.
 func TestAuthLogDir_InvalidLogDirFallsBackToConfigDir(t *testing.T) {
 	t.Setenv("LARKSUITE_CLI_LOG_DIR", "relative-logs")
 	configDir := t.TempDir()
@@ -121,7 +117,7 @@ func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	restore := setAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
+	restore := SetAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
 		return server.URL, true
 	}, func() (string, error) {
 		return "uuid-456", nil
@@ -159,7 +155,7 @@ func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
 }
 
 func TestEmitRemoteAuthEvent_FailOpenOnTransportError(t *testing.T) {
-	restore := setAuthLogRemoteHooksForTest(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+	restore := SetAuthLogRemoteHooksForTest(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("network down")
 	})}, func() (string, bool) {
 		return "https://example.invalid/report", true
@@ -191,7 +187,7 @@ func TestPostRemoteAuthEvent_FallbackGeneratesUUIDv7(t *testing.T) {
 	}))
 	defer server.Close()
 
-	restore := setAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
+	restore := SetAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
 		return server.URL, true
 	}, func() (string, error) {
 		return "", errors.New("provider unavailable")
@@ -221,7 +217,7 @@ func TestEmitRemoteAuthEvent_SkipsWhenEndpointProviderDisablesReporting(t *testi
 	}))
 	defer server.Close()
 
-	restore := setAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
+	restore := SetAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
 		return server.URL, false
 	}, func() (string, error) {
 		return "uuid-123", nil
@@ -238,4 +234,16 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+func TestResolveTelemetryEndpoint(t *testing.T) {
+	if got := ResolveTelemetryEndpoint("feishu"); got != "https://mcs-bd.feishu.cn/v1/list" {
+		t.Errorf("ResolveTelemetryEndpoint(feishu) = %q, want https://mcs-bd.feishu.cn/v1/list", got)
+	}
+	if got := ResolveTelemetryEndpoint("lark"); got != "" {
+		t.Errorf("ResolveTelemetryEndpoint(lark) = %q, want empty", got)
+	}
+	if got := ResolveTelemetryEndpoint(""); got != "https://mcs-bd.feishu.cn/v1/list" {
+		t.Errorf("ResolveTelemetryEndpoint(\"\") = %q, want https://mcs-bd.feishu.cn/v1/list", got)
+	}
 }

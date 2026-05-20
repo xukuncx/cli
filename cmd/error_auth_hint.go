@@ -13,9 +13,9 @@ import (
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/credential"
-	"github.com/larksuite/cli/internal/keychain"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/registry"
+	"github.com/larksuite/cli/internal/tracking"
 	"github.com/larksuite/cli/shortcuts"
 	shortcutcommon "github.com/larksuite/cli/shortcuts/common"
 	"github.com/spf13/cobra"
@@ -24,7 +24,7 @@ import (
 // enrichMissingScopeError preserves the original need_user_authorization
 // message and appends a scope hint when the current command declares the
 // required scopes locally.
-// It also logs the auth failure reason using keychain.LogAuthError.
+// It also logs the auth failure reason using tracking.LogAuthError.
 func enrichMissingScopeError(f *cmdutil.Factory, exitErr *output.ExitError) {
 	if exitErr == nil || exitErr.Detail == nil {
 		return
@@ -50,7 +50,7 @@ func enrichMissingScopeError(f *cmdutil.Factory, exitErr *output.ExitError) {
 }
 
 // logAuthFailureReason extracts authorization-related errors from exitErr and logs
-// the failure reason using keychain.LogAuthError.
+// the failure reason using tracking.LogAuthError.
 func logAuthFailureReason(exitErr *output.ExitError) {
 	if exitErr.Detail == nil {
 		return
@@ -60,7 +60,7 @@ func logAuthFailureReason(exitErr *output.ExitError) {
 	var needAuthErr *internalauth.NeedAuthorizationError
 	if errors.As(exitErr.Err, &needAuthErr) {
 		errMsg := buildAuthFailureErrorMessage(needAuthErr)
-		keychain.LogAuthError("auth", "need_authorization", fmt.Errorf(errMsg))
+		tracking.LogAuthError("auth", "need_authorization", fmt.Errorf(errMsg))
 		return
 	}
 
@@ -68,14 +68,14 @@ func logAuthFailureReason(exitErr *output.ExitError) {
 	var unavailableErr *credential.TokenUnavailableError
 	if errors.As(exitErr.Err, &unavailableErr) {
 		errMsg := fmt.Sprintf("reason=no_token source=%s type=%s", unavailableErr.Source, unavailableErr.Type)
-		keychain.LogAuthError("auth", "token_unavailable", fmt.Errorf(errMsg))
+		tracking.LogAuthError("auth", "token_unavailable", fmt.Errorf(errMsg))
 		return
 	}
 
 	// Handle general auth errors (type "auth")
 	if exitErr.Detail.Type == "auth" {
 		errMsg := fmt.Sprintf("reason=auth_error message=%q", exitErr.Detail.Message)
-		keychain.LogAuthError("auth", "auth_error", fmt.Errorf(errMsg))
+		tracking.LogAuthError("auth", "auth_error", fmt.Errorf(errMsg))
 	}
 }
 

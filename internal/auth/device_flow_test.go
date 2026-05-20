@@ -16,7 +16,7 @@ import (
 
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/httpmock"
-	"github.com/larksuite/cli/internal/keychain"
+	"github.com/larksuite/cli/internal/tracking"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -70,7 +70,7 @@ func TestRequestDeviceAuthorization_LogsResponse(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	restore := keychain.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
+	restore := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
 		return time.Date(2026, 4, 2, 3, 4, 5, 0, time.UTC)
 	}, func() []string {
 		return []string{"lark-cli", "auth", "login", "--device-code", "device-code-secret", "--app-secret=top-secret"}
@@ -102,7 +102,7 @@ func TestRequestDeviceAuthorization_LogsResponse(t *testing.T) {
 
 // TestFormatAuthCmdline_TruncatesExtraArgs verifies that long command lines are truncated.
 func TestFormatAuthCmdline_TruncatesExtraArgs(t *testing.T) {
-	got := keychain.FormatAuthCmdline([]string{
+	got := tracking.FormatAuthCmdline([]string{
 		"lark-cli",
 		"auth",
 		"login",
@@ -120,7 +120,7 @@ func TestFormatAuthCmdline_TruncatesExtraArgs(t *testing.T) {
 // TestLogAuthResponse_IgnoresTypedNilHTTPResponse tests that a typed nil HTTP response is ignored gracefully.
 func TestLogAuthResponse_IgnoresTypedNilHTTPResponse(t *testing.T) {
 	var buf bytes.Buffer
-	restore := keychain.SetAuthLogHooksForTest(log.New(&buf, "", 0), nil, nil)
+	restore := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), nil, nil)
 	t.Cleanup(restore)
 
 	var resp *http.Response
@@ -134,7 +134,7 @@ func TestLogAuthResponse_IgnoresTypedNilHTTPResponse(t *testing.T) {
 // TestLogAuthResponse_HandlesNilSDKResponse verifies that a nil SDK response is handled without panicking.
 func TestLogAuthResponse_HandlesNilSDKResponse(t *testing.T) {
 	var buf bytes.Buffer
-	restore := keychain.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
+	restore := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
 		return time.Date(2026, 4, 2, 3, 4, 5, 0, time.UTC)
 	}, func() []string {
 		return []string{"lark-cli", "auth", "status", "--verify"}
@@ -154,14 +154,14 @@ func TestLogAuthResponse_HandlesNilSDKResponse(t *testing.T) {
 
 func TestLogAuthError_RecordsStructuredEntry(t *testing.T) {
 	var buf bytes.Buffer
-	restore := keychain.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
+	restore := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
 		return time.Date(2026, 4, 2, 3, 4, 5, 0, time.UTC)
 	}, func() []string {
 		return []string{"lark-cli", "auth", "login", "--device-code", "secret"}
 	})
 	t.Cleanup(restore)
 
-	keychain.LogAuthError("keychain", "Set", fmt.Errorf("keychain Set error: %w", http.ErrUseLastResponse))
+	tracking.LogAuthError("keychain", "Set", fmt.Errorf("keychain Set error: %w", http.ErrUseLastResponse))
 
 	got := buf.String()
 	if !strings.Contains(got, "auth-error") {

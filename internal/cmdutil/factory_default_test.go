@@ -16,6 +16,7 @@ import (
 	"github.com/larksuite/cli/internal/credential"
 	"github.com/larksuite/cli/internal/envvars"
 	"github.com/larksuite/cli/internal/lockfile"
+	"github.com/larksuite/cli/internal/tracking"
 	"github.com/larksuite/cli/internal/vfs"
 	"github.com/larksuite/cli/internal/vfs/localfileio"
 )
@@ -364,8 +365,8 @@ func TestCachedAuthLogRemoteEndpointProvider_FeishuEnabled(t *testing.T) {
 	if !enabled {
 		t.Fatal("enabled = false, want true")
 	}
-	if endpoint != core.ResolveTelemetryEndpoint(core.BrandFeishu) {
-		t.Fatalf("endpoint = %q, want %q", endpoint, core.ResolveTelemetryEndpoint(core.BrandFeishu))
+	if endpoint != tracking.ResolveTelemetryEndpoint(string(core.BrandFeishu)) {
+		t.Fatalf("endpoint = %q, want %q", endpoint, tracking.ResolveTelemetryEndpoint(string(core.BrandFeishu)))
 	}
 }
 

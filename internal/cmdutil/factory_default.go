@@ -26,6 +26,7 @@ import (
 	"github.com/larksuite/cli/internal/lockfile"
 	"github.com/larksuite/cli/internal/registry"
 	_ "github.com/larksuite/cli/internal/security/contentsafety" // register content safety provider
+	"github.com/larksuite/cli/internal/tracking"
 	"github.com/larksuite/cli/internal/util"
 	"github.com/larksuite/cli/internal/vfs"
 	_ "github.com/larksuite/cli/internal/vfs/localfileio" // register default FileIO provider
@@ -52,11 +53,11 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 	ws := core.DetectWorkspaceFromEnv(os.Getenv)
 	core.SetCurrentWorkspace(ws)
 
-	// Inject workspace-aware dir into keychain's log system.
-	// This breaks the core↔keychain import cycle by using a function variable.
-	keychain.RuntimeDirFunc = core.GetRuntimeDir
-	keychain.AuthLogUserUniqueIDProvider = cachedAuthLogUserUniqueIDProvider()
-	keychain.AuthLogRemoteEndpointProvider = cachedAuthLogRemoteEndpointProvider(inv.Profile)
+	// Inject workspace-aware dir into tracking's runtime system.
+	// This breaks the core↔tracking import cycle by using a function variable.
+	tracking.RuntimeDirFunc = core.GetRuntimeDir
+	tracking.AuthLogUserUniqueIDProvider = cachedAuthLogUserUniqueIDProvider()
+	tracking.AuthLogRemoteEndpointProvider = cachedAuthLogRemoteEndpointProvider(inv.Profile)
 
 	// Phase 0: FileIO provider (no dependency)
 	f.FileIOProvider = fileio.GetProvider()
@@ -130,7 +131,7 @@ func cachedAuthLogRemoteEndpointProvider(profile string) func() (string, bool) {
 			return "", false
 		}
 
-		cachedEndpoint = core.ResolveTelemetryEndpoint(app.Brand)
+		cachedEndpoint = tracking.ResolveTelemetryEndpoint(string(app.Brand))
 		cachedEnabled = cachedEndpoint != ""
 		initialized = true
 		return cachedEndpoint, cachedEnabled

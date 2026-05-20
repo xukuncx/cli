@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/larksuite/cli/internal/output"
+	"github.com/larksuite/cli/internal/tracking"
 )
 
 var (
@@ -44,7 +45,7 @@ func wrapError(op string, err error) error {
 
 	func() {
 		defer func() { recover() }()
-		LogAuthError("keychain", op, fmt.Errorf("keychain %s error: %w", op, err))
+		tracking.LogAuthError("keychain", op, fmt.Errorf("keychain %s error: %w", op, err))
 	}()
 
 	return output.ErrWithHint(output.ExitAPI, "config", msg, hint)

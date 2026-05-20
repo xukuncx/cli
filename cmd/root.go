@@ -22,11 +22,11 @@ import (
 	"github.com/larksuite/cli/internal/cmdpolicy"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
-	"github.com/larksuite/cli/internal/keychain"
 	"github.com/larksuite/cli/internal/hook"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/registry"
 	"github.com/larksuite/cli/internal/skillscheck"
+	"github.com/larksuite/cli/internal/tracking"
 	"github.com/larksuite/cli/internal/update"
 	"github.com/spf13/cobra"
 )
@@ -359,7 +359,7 @@ func availableSubcommandNames(cmd *cobra.Command) []string {
 	return subs
 }
 
-// logSecurityPolicyError logs a security policy error using keychain.LogAuthError.
+// logSecurityPolicyError logs a security policy error using tracking.LogAuthError.
 func logSecurityPolicyError(spErr *internalauth.SecurityPolicyError) {
 	var codeStr string
 	switch spErr.Code {
@@ -371,7 +371,7 @@ func logSecurityPolicyError(spErr *internalauth.SecurityPolicyError) {
 		codeStr = strconv.Itoa(spErr.Code)
 	}
 	errMsg := fmt.Sprintf("reason=security_policy code=%s message=%q", codeStr, spErr.Message)
-	keychain.LogAuthError("auth", "security_policy", fmt.Errorf(errMsg))
+	tracking.LogAuthError("auth", "security_policy", fmt.Errorf(errMsg))
 }
 
 // logRawAuthFailure logs auth-related failures for Raw errors (e.g. from `api` command).
@@ -384,14 +384,14 @@ func logRawAuthFailure(exitErr *output.ExitError) {
 	// Handle permission errors
 	if exitErr.Detail.Type == "permission" {
 		errMsg := fmt.Sprintf("reason=permission_denied code=%d message=%q", exitErr.Detail.Code, exitErr.Detail.Message)
-		keychain.LogAuthError("auth", "permission_denied", fmt.Errorf(errMsg))
+		tracking.LogAuthError("auth", "permission_denied", fmt.Errorf(errMsg))
 		return
 	}
 
 	// Handle auth errors
 	if exitErr.Detail.Type == "auth" {
 		errMsg := fmt.Sprintf("reason=auth_error message=%q", exitErr.Detail.Message)
-		keychain.LogAuthError("auth", "auth_error", fmt.Errorf(errMsg))
+		tracking.LogAuthError("auth", "auth_error", fmt.Errorf(errMsg))
 	}
 }
 
@@ -506,7 +506,7 @@ func enrichPermissionError(f *cmdutil.Factory, exitErr *output.ExitError) {
 	// Log permission error
 	if reason != "" {
 		errMsg := fmt.Sprintf("user=%s reason=%s scopes=%v", cfg.UserOpenId, reason, scopes)
-		keychain.LogAuthError("auth", "permission_denied", fmt.Errorf(errMsg))
+		tracking.LogAuthError("auth", "permission_denied", fmt.Errorf(errMsg))
 	}
 }
 
