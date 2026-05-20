@@ -14,18 +14,25 @@ import (
 	"path/filepath"
 	"runtime"
 	"time"
+
+	"github.com/larksuite/cli/internal/client"
 )
 
 // Installer orchestrates first-time install of lark-sec-cli:
-// load embedded bootstrap manifest → download zip → extract into
+// fetch remote manifest via OAPI → download zip → extract into
 // versions/<version>/ → swap "current" → write state.json.
 //
 // After this first install, lark-sec-cli takes over its own updates and
 // lark-cli is no longer in the update path. The installer therefore only
-// knows about the bootstrap manifest — no Tron, no other release sources.
+// knows about the bootstrap path — no Tron, no other release sources.
 type Installer struct {
 	Paths      *Paths
 	HTTPClient *http.Client
+	// APIClientFunc resolves the OAPI client lazily. It is invoked only when
+	// the install pipeline actually needs to fetch the remote manifest —
+	// short-circuits (and other callers of installer() that don't install,
+	// like sec status / sec stop) avoid keychain decryption entirely.
+	APIClientFunc func() (*client.APIClient, error)
 }
 
 // InstallOptions tunes a single Install call.
@@ -36,58 +43,108 @@ type InstallOptions struct {
 	// Region selects which region's URLs to pick from the manifest. Defaults to
 	// DefaultRegion ("cn"). Reserved for future brand split.
 	Region string
+	// Verbose, when non-nil, is the destination for step-by-step trace output.
+	// nil = silent (production default); typically set to stderr by `sec install -v`.
+	Verbose io.Writer
+}
+
+// tracef writes one trace line to w if w is non-nil.
+func tracef(w io.Writer, format string, args ...any) {
+	if w == nil {
+		return
+	}
+	fmt.Fprintf(w, "[sec install] "+format+"\n", args...)
 }
 
 // Install runs the bootstrap pipeline and returns the new State on success.
 // If a usable install already exists on disk and Force is false, returns the
 // existing state unchanged (no network call).
 func (i *Installer) Install(ctx context.Context, opts InstallOptions) (*State, error) {
+	v := opts.Verbose
+	tracef(v, "ensuring sec paths under %s", i.Paths.InstallDir())
 	if err := i.Paths.Ensure(); err != nil {
 		return nil, err
 	}
 
+	tracef(v, "loading existing state from %s", i.Paths.StateFile())
 	existing, err := LoadState(i.Paths.StateFile())
 	if err != nil {
 		return nil, fmt.Errorf("load sec state: %w", err)
+	}
+	if existing != nil {
+		tracef(v, "existing state: version=%s binary=%s", existing.Version, existing.BinaryPath)
+	} else {
+		tracef(v, "no existing state on disk")
 	}
 
 	// Idempotent short-circuit: nothing to do if an install is already on disk.
 	// Self-upgrades after bootstrap are lark-sec-cli's job, not ours — see the
 	// upgrade subsystem in lark-sec-cli/internal/upgrade/.
 	if !opts.Force && existing != nil && binaryReady(existing.BinaryPath) {
+		tracef(v, "binary exists at %s — short-circuiting (no network)", existing.BinaryPath)
 		return existing, nil
+	}
+	if opts.Force {
+		tracef(v, "--force set; running full install pipeline")
+	} else {
+		tracef(v, "no usable install on disk; running full install pipeline")
 	}
 
 	region := opts.Region
 	if region == "" {
 		region = DefaultRegion
 	}
+	tracef(v, "region=%s", region)
 
-	manifest, err := LoadBootstrap()
+	if i.APIClientFunc == nil {
+		return nil, errors.New("sec installer: APIClientFunc is required to fetch remote manifest")
+	}
+	tracef(v, "resolving OAPI client (will decrypt credentials)")
+	apiClient, err := i.APIClientFunc()
+	if err != nil {
+		return nil, fmt.Errorf("resolve api client: %w", err)
+	}
+	platform, arch, err := CurrentPlatformArch()
 	if err != nil {
 		return nil, err
 	}
-	artifact, err := manifest.PickArtifact(runtime.GOOS, runtime.GOARCH, region)
+	tracef(v, "detected platform=%s arch=%s", platform, arch)
+
+	tracef(v, "fetching remote manifest from %s", secCliManifestPath)
+	rm, err := FetchRemoteManifest(ctx, apiClient, region, platform, arch, v)
 	if err != nil {
 		return nil, err
 	}
+	tracef(v, "manifest returned %d url(s): %v", len(rm.URLs), rm.URLs)
+	downloadURL := rm.URLs[0]
+	tracef(v, "picked downloadURL=%s", downloadURL)
+	version, err := versionFromURL(downloadURL)
+	if err != nil {
+		return nil, err
+	}
+	tracef(v, "parsed version=%s", version)
 
-	versionDir := i.Paths.VersionDir(artifact.Version)
+	versionDir := i.Paths.VersionDir(version)
+	tracef(v, "creating versionDir=%s", versionDir)
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
 		return nil, err
 	}
-	zipPath := filepath.Join(i.Paths.VersionsDir(), artifact.Version+".zip")
+	zipPath := filepath.Join(i.Paths.VersionsDir(), version+".zip")
 
+	tracef(v, "downloading %s -> %s", downloadURL, zipPath)
 	if err := Download(ctx, DownloadOptions{
-		URL:            artifact.URL,
-		Destination:    zipPath,
-		HTTPClient:     i.HTTPClient,
-		ExpectedSHA256: artifact.SHA256,
+		URL:         downloadURL,
+		Destination: zipPath,
+		HTTPClient:  i.HTTPClient,
 	}); err != nil {
 		return nil, err
 	}
+	if info, statErr := os.Stat(zipPath); statErr == nil {
+		tracef(v, "downloaded %d bytes", info.Size())
+	}
 	defer os.Remove(zipPath) // free disk; we keep the unpacked version dir
 
+	tracef(v, "extracting %s -> %s", zipPath, versionDir)
 	if err := ExtractZip(zipPath, versionDir); err != nil {
 		return nil, err
 	}
@@ -96,6 +153,7 @@ func (i *Installer) Install(ctx context.Context, opts InstallOptions) (*State, e
 	if err != nil {
 		return nil, err
 	}
+	tracef(v, "located binary at %s", binaryPath)
 	// Ensure executable bit on POSIX — some zips lose it.
 	if runtime.GOOS != "windows" {
 		if info, err := os.Stat(binaryPath); err == nil {
@@ -103,13 +161,14 @@ func (i *Installer) Install(ctx context.Context, opts InstallOptions) (*State, e
 		}
 	}
 
+	tracef(v, "swapping %s -> %s", i.Paths.CurrentLink(), versionDir)
 	if err := swapCurrent(i.Paths.CurrentLink(), versionDir); err != nil {
 		return nil, fmt.Errorf("swap current: %w", err)
 	}
 
+	tracef(v, "writing state.json to %s", i.Paths.StateFile())
 	state := &State{
-		Version:     artifact.Version,
-		BuildID:     artifact.BuildID,
+		Version:     version,
 		InstalledAt: time.Now().UTC(),
 		BinaryPath:  i.Paths.BinaryPath(),
 	}

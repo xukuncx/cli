@@ -45,31 +45,38 @@ func NewCmdSecStatus(f *cmdutil.Factory, runF func(*StatusOptions) error) *cobra
 }
 
 func runStatus(cmd *cobra.Command, opts *StatusOptions) error {
+	errOut := opts.Factory.IOStreams.ErrOut
+	trace := verboseOut(cmd, errOut)
+
+	tracef(trace, "sec status", "constructing installer (lazy credentials)")
 	_, paths, err := installer(opts.Factory)
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "internal", "%v", err)
 	}
 	out := opts.Factory.IOStreams.Out
+	tracef(trace, "sec status", "loading state from %s", paths.StateFile())
 	state, err := intsec.LoadState(paths.StateFile())
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "internal", "load sec state: %v", err)
 	}
 	if state == nil {
 		fmt.Fprintln(out, "lark-sec-cli: not installed")
-		fmt.Fprintln(out, "  run: lark-cli sec install")
+		fmt.Fprintln(out, "  run: lark-cli sec run")
 		return nil
 	}
-	fmt.Fprintf(out, "lark-sec-cli %s (buildId=%s)\n", state.Version, state.BuildID)
+	fmt.Fprintf(out, "lark-sec-cli %s\n", state.Version)
 	fmt.Fprintf(out, "  binary: %s\n", state.BinaryPath)
 
 	// Daemon-side detail via `lark-sec-cli status`. The daemon's status
 	// command already covers service registration + pid + proxy reachability
 	// + bridge file — better than re-implementing those here.
+	tracef(trace, "sec status", "shelling out to %s status", state.BinaryPath)
 	c := exec.CommandContext(cmd.Context(), state.BinaryPath, "status")
 	var stdout, stderr bytes.Buffer
 	c.Stdout = &stdout
 	c.Stderr = &stderr
 	runErr := c.Run()
+	tracef(trace, "sec status", "daemon status exit=%v stdout=%d bytes stderr=%d bytes", runErr, stdout.Len(), stderr.Len())
 	fmt.Fprintln(out, "  --- lark-sec-cli status ---")
 	if stdout.Len() > 0 {
 		fmt.Fprint(out, indent(stdout.String(), "  "))

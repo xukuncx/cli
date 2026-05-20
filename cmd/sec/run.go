@@ -67,6 +67,10 @@ To stop and remove the service: lark-cli sec stop.`,
 
 func runRun(cmd *cobra.Command, opts *RunOptions) error {
 	ctx := cmd.Context()
+	errOut := opts.Factory.IOStreams.ErrOut
+	trace := verboseOut(cmd, errOut)
+
+	tracef(trace, "sec run", "constructing installer (lazy credentials)")
 	inst, paths, err := installer(opts.Factory)
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "internal", "%v", err)
@@ -74,20 +78,24 @@ func runRun(cmd *cobra.Command, opts *RunOptions) error {
 
 	// Make sure we have a binary on disk before asking it to install itself
 	// as a service.
+	tracef(trace, "sec run", "loading state from %s", paths.StateFile())
 	state, err := intsec.LoadState(paths.StateFile())
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "internal", "load sec state: %v", err)
 	}
 	if state == nil {
+		tracef(trace, "sec run", "no install on disk (auto-install=%t)", opts.AutoInstall)
 		if !opts.AutoInstall {
 			return output.ErrWithHint(output.ExitValidation, "sec_not_installed",
 				"lark-sec-cli is not installed",
-				"Run `lark-cli sec install` first, or re-run with --auto-install.")
+				"Re-run `lark-cli sec run` with --auto-install (default on), or remove --auto-install=false.")
 		}
-		state, err = inst.Install(ctx, intsec.InstallOptions{})
+		state, err = inst.Install(ctx, intsec.InstallOptions{Verbose: trace})
 		if err != nil {
 			return output.Errorf(output.ExitNetwork, "sec_install", "auto-install lark-sec-cli: %v", err)
 		}
+	} else {
+		tracef(trace, "sec run", "existing install: version=%s binary=%s", state.Version, state.BinaryPath)
 	}
 
 	args := []string{"service", "enable"}
@@ -95,8 +103,8 @@ func runRun(cmd *cobra.Command, opts *RunOptions) error {
 		args = append(args, fmt.Sprintf("--proxy-port=%d", opts.ProxyPort))
 	}
 
-	out := opts.Factory.IOStreams.ErrOut
-	fmt.Fprintf(out, "Running: %s %v\n", state.BinaryPath, args)
+	fmt.Fprintf(errOut, "Running: %s %v\n", state.BinaryPath, args)
+	tracef(trace, "sec run", "shelling out to %s %v", state.BinaryPath, args)
 
 	c := exec.CommandContext(ctx, state.BinaryPath, args...)
 	var stdout, stderr bytes.Buffer
@@ -106,13 +114,14 @@ func runRun(cmd *cobra.Command, opts *RunOptions) error {
 		return output.Errorf(output.ExitInternal, "sec_service_enable",
 			"`lark-sec-cli service enable` failed: %v\nstderr: %s", err, stderr.String())
 	}
+	tracef(trace, "sec run", "service enable returned ok (%d bytes stdout)", stdout.Len())
 
 	// Forward the installer's stdout to the user — it contains the launchd /
 	// systemd unit name, the registered executable path, and a confirmation
 	// that the supervisor will respawn the daemon on exit. Useful diagnostic
 	// output that's better seen than swallowed.
-	fmt.Fprint(out, stdout.String())
-	output.PrintSuccess(out,
+	fmt.Fprint(errOut, stdout.String())
+	output.PrintSuccess(errOut,
 		"lark-sec-cli enabled as a user system service. Run `lark-cli sec status` to verify, `lark-cli sec stop` to disable.")
 	return nil
 }

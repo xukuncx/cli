@@ -12,9 +12,11 @@ import (
 )
 
 // TestNewCmdSec_HasAllSubcommands locks in the public command surface so a
-// future refactor doesn't silently drop install/run/etc. The `update` verb
+// future refactor doesn't silently drop run/status/etc. The `update` verb
 // was intentionally removed when lark-sec-cli took over its own upgrade
-// lifecycle; if it ever needs to come back, add it here too.
+// lifecycle; if it ever needs to come back, add it here too. `install` was
+// removed because `sec run --auto-install` (default on) makes a standalone
+// install verb redundant.
 func TestNewCmdSec_HasAllSubcommands(t *testing.T) {
 	f, _, _, _ := cmdutil.TestFactory(t, &core.CliConfig{AppID: "a", AppSecret: "s"})
 	cmd := NewCmdSec(f)
@@ -24,7 +26,7 @@ func TestNewCmdSec_HasAllSubcommands(t *testing.T) {
 		got = append(got, c.Name())
 	}
 	sort.Strings(got)
-	want := []string{"config", "install", "run", "status", "stop"}
+	want := []string{"config", "run", "status", "stop"}
 	if len(got) != len(want) {
 		t.Fatalf("subcommands = %v, want %v", got, want)
 	}
@@ -32,26 +34,5 @@ func TestNewCmdSec_HasAllSubcommands(t *testing.T) {
 		if got[i] != name {
 			t.Errorf("subcommands[%d] = %q, want %q", i, got[i], name)
 		}
-	}
-}
-
-// TestNewCmdSecInstall_FlagParsing follows the cmd/auth/auth_test pattern:
-// inject runF, parse flags, assert opts captured them.
-func TestNewCmdSecInstall_FlagParsing(t *testing.T) {
-	f, _, _, _ := cmdutil.TestFactory(t, &core.CliConfig{AppID: "a", AppSecret: "s"})
-	var got *InstallOptions
-	cmd := NewCmdSecInstall(f, func(opts *InstallOptions) error {
-		got = opts
-		return nil
-	})
-	cmd.SetArgs([]string{"--force"})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if got == nil {
-		t.Fatal("runF not invoked")
-	}
-	if !got.Force {
-		t.Errorf("Force = false, want true")
 	}
 }

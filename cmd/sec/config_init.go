@@ -86,12 +86,17 @@ type secBridge struct {
 }
 
 func runConfigInit(cmd *cobra.Command, opts *ConfigInitOptions) error {
+	errOut := opts.Factory.IOStreams.ErrOut
+	trace := verboseOut(cmd, errOut)
+
+	tracef(trace, "sec config init", "loading daemon bridge from %s/sec_config.json", core.GetConfigDir())
 	bridge, err := loadBridge()
 	if err != nil {
 		return output.ErrWithHint(output.ExitValidation, "sec_bridge_missing",
 			fmt.Sprintf("daemon bridge file unreadable: %v", err),
 			"Start the daemon first: `lark-cli sec run`.")
 	}
+	tracef(trace, "sec config init", "bridge: enable=%t proxy=%s ca=%s auth=%t", bridge.Enable, bridge.Proxy, bridge.CA, bridge.Auth)
 	if !bridge.Enable || bridge.Proxy == "" {
 		return output.ErrWithHint(output.ExitValidation, "sec_not_running",
 			"lark-sec-cli is not advertising an active proxy",
@@ -102,6 +107,7 @@ func runConfigInit(cmd *cobra.Command, opts *ConfigInitOptions) error {
 	// from the bridge's SEC_CA path keeps lark-cli decoupled from the daemon's
 	// install location — if the daemon ever moves, the bridge follows and we
 	// follow with it.
+	tracef(trace, "sec config init", "reading daemon HMAC key beside %s", bridge.CA)
 	hmacKey, err := readHMACKey(bridge.CA)
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "sec_hmac_key", "read daemon HMAC key: %v", err)
@@ -111,11 +117,12 @@ func runConfigInit(cmd *cobra.Command, opts *ConfigInitOptions) error {
 		return err
 	}
 
+	tracef(trace, "sec config init", "POST %s/_sec/api/v1/register-app app_id=%s brand=%s", bridge.Proxy, opts.AppID, opts.Brand)
 	if err := registerApp(cmd.Context(), bridge.Proxy, hmacKey, opts.AppID, opts.AppSecret, opts.Brand); err != nil {
 		return output.Errorf(output.ExitAPI, "sec_register_app", "register-app: %v", err)
 	}
 
-	output.PrintSuccess(opts.Factory.IOStreams.ErrOut,
+	output.PrintSuccess(errOut,
 		fmt.Sprintf("registered app %s with lark-sec-cli (%s)", opts.AppID, opts.Brand))
 	return nil
 }

@@ -18,20 +18,29 @@ import (
 )
 
 // NewCmdSec builds the parent `sec` command and registers all subcommands.
+//
+// The persistent --verbose / -v flag is inherited by every subcommand:
+// `sec run -v`, `sec status -v`, etc. all emit step-by-step trace output to
+// stderr.
+//
+// There is no `sec install` subcommand — `sec run` auto-installs lark-sec-cli
+// if no binary is on disk, so a separate install verb was redundant.
 func NewCmdSec(f *cmdutil.Factory) *cobra.Command {
+	var verbose bool
 	cmd := &cobra.Command{
 		Use:   "sec",
-		Short: "Manage the lark-sec-cli security sidecar (install, run, status)",
+		Short: "Manage the lark-sec-cli security sidecar (run, status, stop, config)",
 		Long: `Manage the lark-sec-cli security sidecar.
 
 lark-sec-cli is a local HTTPS proxy daemon that intercepts lark-cli's traffic,
 injects BDMS risk-control signatures, and manages credentials via the OS
-keychain. These subcommands handle the install and runtime lifecycle from
-lark-cli's side: bootstrap-install the daemon, run it in the background, and
-wire the captured environment back into lark-cli. Updates after the first
-install are managed by lark-sec-cli itself.`,
+keychain. These subcommands handle the runtime lifecycle from lark-cli's side:
+start the daemon (auto-installing on first run), inspect its state, register
+an app with it, and stop it. Updates after the first install are managed by
+lark-sec-cli itself.`,
 	}
-	cmd.AddCommand(NewCmdSecInstall(f, nil))
+	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false,
+		"print step-by-step pipeline output to stderr")
 	cmd.AddCommand(NewCmdSecRun(f, nil))
 	cmd.AddCommand(NewCmdSecStop(f, nil))
 	cmd.AddCommand(NewCmdSecStatus(f, nil))

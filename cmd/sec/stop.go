@@ -43,23 +43,29 @@ func NewCmdSecStop(f *cmdutil.Factory, runF func(*StopOptions) error) *cobra.Com
 }
 
 func runStop(cmd *cobra.Command, opts *StopOptions) error {
+	out := opts.Factory.IOStreams.ErrOut
+	trace := verboseOut(cmd, out)
+
+	tracef(trace, "sec stop", "constructing installer (lazy credentials)")
 	_, paths, err := installer(opts.Factory)
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "internal", "%v", err)
 	}
+	tracef(trace, "sec stop", "loading state from %s", paths.StateFile())
 	state, err := intsec.LoadState(paths.StateFile())
 	if err != nil {
 		return output.Errorf(output.ExitInternal, "internal", "load sec state: %v", err)
 	}
 	if state == nil {
 		// Nothing on disk to stop — no-op.
-		output.PrintSuccess(opts.Factory.IOStreams.ErrOut, "lark-sec-cli not installed; nothing to stop")
+		tracef(trace, "sec stop", "no install on disk; nothing to stop")
+		output.PrintSuccess(out, "lark-sec-cli not installed; nothing to stop")
 		return nil
 	}
 
-	out := opts.Factory.IOStreams.ErrOut
 	args := []string{"service", "disable"}
 	fmt.Fprintf(out, "Running: %s %v\n", state.BinaryPath, args)
+	tracef(trace, "sec stop", "shelling out to %s %v", state.BinaryPath, args)
 
 	c := exec.CommandContext(cmd.Context(), state.BinaryPath, args...)
 	var stdout, stderr bytes.Buffer
@@ -69,6 +75,7 @@ func runStop(cmd *cobra.Command, opts *StopOptions) error {
 		return output.Errorf(output.ExitInternal, "sec_service_disable",
 			"`lark-sec-cli service disable` failed: %v\nstderr: %s", err, stderr.String())
 	}
+	tracef(trace, "sec stop", "service disable returned ok (%d bytes stdout)", stdout.Len())
 	fmt.Fprint(out, stdout.String())
 	output.PrintSuccess(out, "lark-sec-cli service disabled")
 	return nil
