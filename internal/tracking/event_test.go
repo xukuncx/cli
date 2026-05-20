@@ -4,7 +4,6 @@
 package tracking
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -39,18 +38,6 @@ func TestAuthLogDir_InvalidLogDirFallsBackToConfigDir(t *testing.T) {
 	want := filepath.Join(configDir, "logs")
 	if got != want {
 		t.Fatalf("authLogDir() = %q, want %q", got, want)
-	}
-}
-
-func TestWriteTrackingWarning_WritesToInjectedWriter(t *testing.T) {
-	var buf bytes.Buffer
-
-	writeTrackingWarning(&buf, "background log cleanup panicked: %v\n", "boom")
-
-	got := buf.String()
-	want := "[lark-cli] [WARN] background log cleanup panicked: boom\n"
-	if got != want {
-		t.Fatalf("warning = %q, want %q", got, want)
 	}
 }
 
@@ -130,9 +117,7 @@ func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	restore := SetAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
-		return server.URL, true
-	}, func() (string, error) {
+	restore := SetAuthLogRemoteHooksForTest(server.Client(), "feishu", func() (string, error) {
 		return "uuid-456", nil
 	}, true)
 	defer restore()
@@ -170,9 +155,7 @@ func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
 func TestEmitRemoteAuthEvent_FailOpenOnTransportError(t *testing.T) {
 	restore := SetAuthLogRemoteHooksForTest(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, errors.New("network down")
-	})}, func() (string, bool) {
-		return "https://example.invalid/report", true
-	}, func() (string, error) {
+	})}, "feishu", func() (string, error) {
 		return "uuid-789", nil
 	}, true)
 	defer restore()
@@ -200,9 +183,7 @@ func TestPostRemoteAuthEvent_FallbackGeneratesUUIDv7(t *testing.T) {
 	}))
 	defer server.Close()
 
-	restore := SetAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
-		return server.URL, true
-	}, func() (string, error) {
+	restore := SetAuthLogRemoteHooksForTest(server.Client(), "feishu", func() (string, error) {
 		return "", errors.New("provider unavailable")
 	}, true)
 	defer restore()
@@ -230,9 +211,7 @@ func TestEmitRemoteAuthEvent_SkipsWhenEndpointProviderDisablesReporting(t *testi
 	}))
 	defer server.Close()
 
-	restore := SetAuthLogRemoteHooksForTest(server.Client(), func() (string, bool) {
-		return server.URL, false
-	}, func() (string, error) {
+	restore := SetAuthLogRemoteHooksForTest(server.Client(), "lark", func() (string, error) {
 		return "uuid-123", nil
 	}, true)
 	defer restore()

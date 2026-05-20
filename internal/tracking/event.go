@@ -89,39 +89,49 @@ type authRemoteEvent struct {
 var RuntimeDirFunc = defaultRuntimeDir
 
 // AuthLogUserUniqueIDProvider returns the persistent user_unique_id used by the
-// auth log remote sink.
-// Default: disabled provider that reports configuration is unavailable.
-// Injected by cmdutil.NewDefault after workspace/config setup.
-// This avoids an import cycle (core → tracking → core).
-var AuthLogUserUniqueIDProvider = defaultAuthLogUserUniqueIDProvider
+// auth log remote sink. It reads/writes a UUID v7 from RuntimeDirFunc()/cache/user_uniq_id.
+var AuthLogUserUniqueIDProvider = loadOrCreateUserUniqueID
 
-// AuthLogRemoteEndpointProvider returns the telemetry endpoint and whether
-// remote reporting is enabled for the current runtime context.
-// Default: disabled provider so telemetry stays off before factory injection.
-// Injected by cmdutil.NewDefault after workspace/config setup.
-// This avoids an import cycle (core → tracking → core).
-var AuthLogRemoteEndpointProvider = defaultAuthLogRemoteEndpointProvider
+// AuthLogBrand is the current brand (e.g. "feishu", "lark").
+// When the brand is not "feishu", remote auth log reporting is disabled.
+// Set once by cmdutil.NewDefault after workspace/config setup.
+var AuthLogBrand string
 
-// AuthLogAppIDProvider returns the current app_id (considering multi-profile selection).
-// Default: returns empty string before factory injection.
-// Injected by cmdutil.NewDefault after workspace/config setup.
-// This avoids an import cycle (core → tracking → core).
-var AuthLogAppIDProvider = defaultAuthLogAppIDProvider
+// AuthLogAppID is the current app_id (considering multi-profile selection).
+// Set once by cmdutil.NewDefault after workspace/config setup.
+var AuthLogAppID string
 
-// AuthLogWarnWriter receives non-fatal tracking warnings.
-// Default: discard until cmdutil.NewDefault injects the command ErrOut stream.
-var AuthLogWarnWriter io.Writer = io.Discard
+var userUniqueIDMu sync.Mutex
 
-func defaultAuthLogUserUniqueIDProvider() (string, error) {
-	return "", fmt.Errorf("auth log user unique id provider is not configured")
-}
+func loadOrCreateUserUniqueID() (string, error) {
+	userUniqueIDMu.Lock()
+	defer userUniqueIDMu.Unlock()
 
-func defaultAuthLogRemoteEndpointProvider() (string, bool) {
-	return "", false
-}
+	dir := authLogDir()
+	idFile := filepath.Join(dir, "user_uniq_id")
 
-func defaultAuthLogAppIDProvider() string {
-	return ""
+	// Try reading existing ID
+	if data, err := vfs.ReadFile(idFile); err == nil {
+		if id := strings.TrimSpace(string(data)); id != "" {
+			return id, nil
+		}
+	}
+
+	// Generate new UUID v7
+	newID, err := uuid.NewV7()
+	if err != nil {
+		return "", fmt.Errorf("generate user unique id: %w", err)
+	}
+	id := newID.String()
+
+	// Persist
+	if err := vfs.MkdirAll(dir, 0700); err != nil {
+		return "", fmt.Errorf("create cache dir: %w", err)
+	}
+	if err := vfs.WriteFile(idFile, []byte(id+"\n"), 0600); err != nil {
+		return "", fmt.Errorf("write user unique id: %w", err)
+	}
+	return id, nil
 }
 
 func defaultRuntimeDir() string {
@@ -315,8 +325,8 @@ func emitLocalAuthEvent(event authEvent) {
 }
 
 func emitRemoteAuthEvent(event authEvent) {
-	endpoint, ok := AuthLogRemoteEndpointProvider()
-	if !authRemoteEnabled || !ok || endpoint == "" {
+	endpoint := ResolveTelemetryEndpoint(AuthLogBrand)
+	if !authRemoteEnabled || endpoint == "" {
 		return
 	}
 
@@ -407,7 +417,7 @@ func buildRemoteAuthParams(event authEvent, ts int64) (string, error) {
 		"parent":           event.Parent,
 		"cmdline":          event.Cmdline,
 		"lark_cli_version": build.Version,
-		"op_client_id":     AuthLogAppIDProvider(),
+		"op_client_id":     AuthLogAppID,
 		"timestamp_s":      ts,
 	}
 
@@ -476,18 +486,16 @@ func SetAuthLogHooksForTest(logger *log.Logger, now func() time.Time, args func(
 	}
 }
 
-func SetAuthLogRemoteHooksForTest(client *http.Client, endpointProvider func() (string, bool), provider func() (string, error), enabled bool) func() {
+func SetAuthLogRemoteHooksForTest(client *http.Client, brand string, provider func() (string, error), enabled bool) func() {
 	prevClient := authRemoteClient
-	prevEndpointProvider := AuthLogRemoteEndpointProvider
+	prevBrand := AuthLogBrand
 	prevProvider := AuthLogUserUniqueIDProvider
 	prevEnabled := authRemoteEnabled
 
 	if client != nil {
 		authRemoteClient = client
 	}
-	if endpointProvider != nil {
-		AuthLogRemoteEndpointProvider = endpointProvider
-	}
+	AuthLogBrand = brand
 	if provider != nil {
 		AuthLogUserUniqueIDProvider = provider
 	}
@@ -495,7 +503,7 @@ func SetAuthLogRemoteHooksForTest(client *http.Client, endpointProvider func() (
 
 	return func() {
 		authRemoteClient = prevClient
-		AuthLogRemoteEndpointProvider = prevEndpointProvider
+		AuthLogBrand = prevBrand
 		AuthLogUserUniqueIDProvider = prevProvider
 		authRemoteEnabled = prevEnabled
 	}
@@ -504,7 +512,7 @@ func SetAuthLogRemoteHooksForTest(client *http.Client, endpointProvider func() (
 func cleanupOldLogs(dir string, now time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
-			writeTrackingWarning(AuthLogWarnWriter, "background log cleanup panicked: %v\n", r)
+			// non-fatal: discard panic from background log cleanup
 		}
 	}()
 
@@ -533,13 +541,6 @@ func cleanupOldLogs(dir string, now time.Time) {
 			_ = vfs.Remove(filepath.Join(dir, entry.Name()))
 		}
 	}
-}
-
-func writeTrackingWarning(w io.Writer, format string, args ...any) {
-	if w == nil {
-		return
-	}
-	fmt.Fprintf(w, "[lark-cli] [WARN] "+format, args...)
 }
 
 const telemetryEndpointFeishu = "https://mcs-bd.feishu.cn/v1/list"

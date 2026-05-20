@@ -9,11 +9,9 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
@@ -23,12 +21,10 @@ import (
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/credential"
 	"github.com/larksuite/cli/internal/keychain"
-	"github.com/larksuite/cli/internal/lockfile"
 	"github.com/larksuite/cli/internal/registry"
 	_ "github.com/larksuite/cli/internal/security/contentsafety" // register content safety provider
 	"github.com/larksuite/cli/internal/tracking"
 	"github.com/larksuite/cli/internal/util"
-	"github.com/larksuite/cli/internal/vfs"
 	_ "github.com/larksuite/cli/internal/vfs/localfileio" // register default FileIO provider
 )
 
@@ -56,16 +52,6 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 	// Inject workspace-aware dir into tracking's runtime system.
 	// This breaks the core↔tracking import cycle by using a function variable.
 	tracking.RuntimeDirFunc = core.GetRuntimeDir
-	tracking.AuthLogUserUniqueIDProvider = cachedAuthLogUserUniqueIDProvider()
-	tracking.AuthLogRemoteEndpointProvider = cachedAuthLogRemoteEndpointProvider(inv.Profile)
-	tracking.AuthLogWarnWriter = streams.ErrOut
-	tracking.AuthLogAppIDProvider = func() string {
-		cfg, err := f.Config()
-		if err != nil {
-			return ""
-		}
-		return cfg.AppID
-	}
 
 	// Phase 0: FileIO provider (no dependency)
 	f.FileIOProvider = fileio.GetProvider()
@@ -93,87 +79,16 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 		return cfg, nil
 	})
 
+	// Set tracking brand/app_id after Config is available.
+	if cfg, err := f.Config(); err == nil {
+		tracking.AuthLogBrand = string(cfg.Brand)
+		tracking.AuthLogAppID = cfg.AppID
+	}
+
 	// Phase 4: LarkClient from Credential (placeholder AppSecret)
 	f.LarkClient = cachedLarkClientFunc(f)
 
 	return f
-}
-
-func cachedAuthLogUserUniqueIDProvider() func() (string, error) {
-	var mu sync.Mutex
-	var cached string
-	return func() (string, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if cached != "" {
-			return cached, nil
-		}
-		id, err := loadOrCreateAuthLogUserUniqueID()
-		if err == nil && id != "" {
-			cached = id
-		}
-		return id, err
-	}
-}
-
-func cachedAuthLogRemoteEndpointProvider(profile string) func() (string, bool) {
-	var mu sync.Mutex
-	var cachedEndpoint string
-	var cachedEnabled bool
-	var initialized bool
-
-	return func() (string, bool) {
-		mu.Lock()
-		defer mu.Unlock()
-		if initialized {
-			return cachedEndpoint, cachedEnabled
-		}
-
-		multi, err := core.LoadMultiAppConfig()
-		if err != nil {
-			return "", false
-		}
-		app := multi.CurrentAppConfig(profile)
-		if app == nil || app.Brand != core.BrandFeishu {
-			initialized = true
-			return "", false
-		}
-
-		cachedEndpoint = tracking.ResolveTelemetryEndpoint(string(app.Brand))
-		cachedEnabled = cachedEndpoint != ""
-		initialized = true
-		return cachedEndpoint, cachedEnabled
-	}
-}
-
-func loadOrCreateAuthLogUserUniqueID() (string, error) {
-	lockDir := filepath.Join(core.GetConfigDir(), "locks")
-	if err := vfs.MkdirAll(lockDir, 0700); err != nil {
-		return "", fmt.Errorf("create config lock dir: %w", err)
-	}
-	lock := lockfile.New(filepath.Join(lockDir, "config.json.lock"))
-	if err := lock.TryLock(); err != nil {
-		return "", err
-	}
-	defer lock.Unlock()
-
-	multi, err := core.LoadMultiAppConfig()
-	if err != nil {
-		return "", err
-	}
-	if multi.UserUniqueID != "" {
-		return multi.UserUniqueID, nil
-	}
-
-	newID, err := uuid.NewV7()
-	if err != nil {
-		return "", fmt.Errorf("generate auth log user unique id: %w", err)
-	}
-	multi.UserUniqueID = newID.String()
-	if err := core.SaveMultiAppConfig(multi); err != nil {
-		return "", err
-	}
-	return multi.UserUniqueID, nil
 }
 
 // safeRedirectPolicy prevents credential headers from being forwarded
