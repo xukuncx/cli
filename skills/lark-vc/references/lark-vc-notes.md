@@ -64,7 +64,7 @@ lark-cli vc +notes --meeting-ids 69xxxxxxxxxxxxx28 --dry-run
 | 输入 | 所需权限 |
 |------|---------|
 | `--meeting-ids` | `vc:meeting.meetingevent:read`、`vc:note:read` |
-| `--minute-tokens` | `vc:note:read`、`minutes:minutes:readonly`、`minutes:minutes.artifacts:read`、`minutes:minutes.transcript:export` |
+| `--minute-tokens` | `vc:note:read`、`minutes:minutes:readonly`、`minutes:minutes.artifacts:read` |
 | `--calendar-event-ids` | `calendar:calendar:read`、`calendar:calendar.event:read`、`vc:meeting.meetingevent:read`、`vc:note:read` |
 
 ## 输出结果
