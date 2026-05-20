@@ -193,12 +193,12 @@ func getParentProcessName() string {
 
 func getParentProcessNameLinux(ppid int) string {
 	exePath := fmt.Sprintf("/proc/%d/exe", ppid)
-	if targetPath, err := os.Readlink(exePath); err == nil {
+	if targetPath, err := vfs.Readlink(exePath); err == nil {
 		return filepath.Base(targetPath)
 	}
 
 	commPath := fmt.Sprintf("/proc/%d/comm", ppid)
-	if data, err := os.ReadFile(commPath); err == nil {
+	if data, err := vfs.ReadFile(commPath); err == nil {
 		return strings.TrimSpace(string(data))
 	}
 
@@ -207,7 +207,7 @@ func getParentProcessNameLinux(ppid int) string {
 
 func getParentProcessNameDarwin(ppid int) string {
 	exePath := fmt.Sprintf("/proc/%d/exe", ppid)
-	if targetPath, err := os.Readlink(exePath); err == nil {
+	if targetPath, err := vfs.Readlink(exePath); err == nil {
 		return filepath.Base(targetPath)
 	}
 

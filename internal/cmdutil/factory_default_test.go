@@ -6,6 +6,7 @@ package cmdutil
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/larksuite/cli/internal/envvars"
 	"github.com/larksuite/cli/internal/lockfile"
 	"github.com/larksuite/cli/internal/tracking"
-	"github.com/larksuite/cli/internal/vfs"
 	"github.com/larksuite/cli/internal/vfs/localfileio"
 )
 
@@ -282,7 +282,7 @@ func TestLoadOrCreateAuthLogUserUniqueID_UpgradesConfigWithoutField(t *testing.T
 	    }
 	  ]
 	}`)
-	if err := vfs.WriteFile(filepath.Join(dir, "config.json"), raw, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), raw, 0600); err != nil {
 		t.Fatalf("WriteFile(config.json) error = %v", err)
 	}
 
@@ -326,7 +326,7 @@ func TestLoadOrCreateAuthLogUserUniqueID_FailsWhenLockHeld(t *testing.T) {
 		t.Fatalf("SaveMultiAppConfig() error = %v", err)
 	}
 
-	if err := vfs.MkdirAll(filepath.Join(core.GetConfigDir(), "locks"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(core.GetConfigDir(), "locks"), 0700); err != nil {
 		t.Fatalf("MkdirAll(locks) error = %v", err)
 	}
 

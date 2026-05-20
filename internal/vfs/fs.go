@@ -30,7 +30,8 @@ type FS interface {
 	Remove(name string) error
 	Rename(oldpath, newpath string) error
 
-	// Path resolution
+	// Symlinks
+	Readlink(name string) (string, error)
 	EvalSymlinks(path string) (string, error)
 	Executable() (string, error)
 }

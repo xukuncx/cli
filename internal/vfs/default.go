@@ -31,5 +31,6 @@ func MkdirAll(path string, perm fs.FileMode) error     { return DefaultFS.MkdirA
 func ReadDir(name string) ([]os.DirEntry, error)       { return DefaultFS.ReadDir(name) }
 func Remove(name string) error                         { return DefaultFS.Remove(name) }
 func Rename(oldpath, newpath string) error             { return DefaultFS.Rename(oldpath, newpath) }
+func Readlink(name string) (string, error)              { return DefaultFS.Readlink(name) }
 func EvalSymlinks(path string) (string, error)         { return DefaultFS.EvalSymlinks(path) }
 func Executable() (string, error)                      { return DefaultFS.Executable() }
