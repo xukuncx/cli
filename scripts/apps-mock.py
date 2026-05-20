@@ -42,7 +42,7 @@ def build_response(action):
         'list':         {'items': [{'app_id': 'app_mock_001', 'name': 'Mock App'}], 'page_token': '', 'has_more': False},
         'access_scope': {},
         'access_scope_get': {
-            'scope': 3,
+            'scope': 'Range',
             'users': ['ou_mock_user_1', 'ou_mock_user_2'],
             'departments': ['od_mock_dept_1'],
             'chats': ['oc_mock_chat_1'],
