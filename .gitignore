@@ -44,3 +44,41 @@ app.log
 cover*.out
 
 lark-env.sh
+
+# Local credentials / account secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local.env
+*.secret.local
+*.secrets.local
+sandbox.env
+auth.local.json
+credentials.local.json
+secrets.local.json
+tokens.local.json
+.auth/
+.secrets/
+
+# ByteDance/internal local data and eval snapshots
+.bytedance/
+bytedance-local/
+*.bytedance.local
+*.bytedance.local.*
+tests/eval-search/bytedance/
+tests/eval-search/bytedance-*/
+tests/eval-search/*bytedance*
+tests/eval-search/**/dataset.jsonl
+tests/eval-search/**/preflight.json
+tests/eval-search/**/summary.json
+tests/eval-search/**/meta.json
+tests/eval-search/**/raw/
+tests/eval-search/**/trajectories/
+skills/eval-search/references/known-tainted-tokens.local.md
+
+# Agent / harness local state
+.agent2lark/
+.codex/
+.harness_local/
+.memory/

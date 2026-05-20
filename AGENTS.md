@@ -45,6 +45,9 @@ Both notices recommend the same fix command: `lark-cli update`. The skills notic
 - Conventional Commits in English: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`
 - PR title in the same format. Fill `.github/pull_request_template.md` completely.
 - Never commit secrets, tokens, or internal sensitive data.
+- Do not include eval-search harness files in normal feature/fix PRs. Exclude `skills/eval-search/**`, `tests/eval-search/**`, and generated eval-search artifacts unless the user explicitly asks for an eval-search harness PR.
+- Before creating a PR from an eval-search-driven workflow, verify the PR diff contains no eval-search-related paths.
+- If `.git/info/codex-context.md` exists, read it after this file for local private project context. That file is intentionally untracked and must never be added or committed.
 
 ## Source Layout
 
