@@ -4,6 +4,7 @@
 package tracking
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -38,6 +39,18 @@ func TestAuthLogDir_InvalidLogDirFallsBackToConfigDir(t *testing.T) {
 	want := filepath.Join(configDir, "logs")
 	if got != want {
 		t.Fatalf("authLogDir() = %q, want %q", got, want)
+	}
+}
+
+func TestWriteTrackingWarning_WritesToInjectedWriter(t *testing.T) {
+	var buf bytes.Buffer
+
+	writeTrackingWarning(&buf, "background log cleanup panicked: %v\n", "boom")
+
+	got := buf.String()
+	want := "[lark-cli] [WARN] background log cleanup panicked: boom\n"
+	if got != want {
+		t.Fatalf("warning = %q, want %q", got, want)
 	}
 }
 

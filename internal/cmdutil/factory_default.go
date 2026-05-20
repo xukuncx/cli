@@ -58,6 +58,7 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 	tracking.RuntimeDirFunc = core.GetRuntimeDir
 	tracking.AuthLogUserUniqueIDProvider = cachedAuthLogUserUniqueIDProvider()
 	tracking.AuthLogRemoteEndpointProvider = cachedAuthLogRemoteEndpointProvider(inv.Profile)
+	tracking.AuthLogWarnWriter = streams.ErrOut
 	tracking.AuthLogAppIDProvider = func() string {
 		cfg, err := f.Config()
 		if err != nil {

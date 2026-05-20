@@ -108,6 +108,10 @@ var AuthLogRemoteEndpointProvider = defaultAuthLogRemoteEndpointProvider
 // This avoids an import cycle (core → tracking → core).
 var AuthLogAppIDProvider = defaultAuthLogAppIDProvider
 
+// AuthLogWarnWriter receives non-fatal tracking warnings.
+// Default: discard until cmdutil.NewDefault injects the command ErrOut stream.
+var AuthLogWarnWriter io.Writer = io.Discard
+
 func defaultAuthLogUserUniqueIDProvider() (string, error) {
 	return "", fmt.Errorf("auth log user unique id provider is not configured")
 }
@@ -500,7 +504,7 @@ func SetAuthLogRemoteHooksForTest(client *http.Client, endpointProvider func() (
 func cleanupOldLogs(dir string, now time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "[lark-cli] [WARN] background log cleanup panicked: %v\n", r)
+			writeTrackingWarning(AuthLogWarnWriter, "background log cleanup panicked: %v\n", r)
 		}
 	}()
 
@@ -529,6 +533,13 @@ func cleanupOldLogs(dir string, now time.Time) {
 			_ = vfs.Remove(filepath.Join(dir, entry.Name()))
 		}
 	}
+}
+
+func writeTrackingWarning(w io.Writer, format string, args ...any) {
+	if w == nil {
+		return
+	}
+	fmt.Fprintf(w, "[lark-cli] [WARN] "+format, args...)
 }
 
 const telemetryEndpointFeishu = "https://mcs-bd.feishu.cn/v1/list"
