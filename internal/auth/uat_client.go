@@ -84,7 +84,11 @@ func GetValidAccessToken(httpClient *http.Client, opts UATCallOptions) (string, 
 			return "", err
 		}
 		if refreshed == nil {
-			return "", &NeedAuthorizationError{UserOpenId: opts.UserOpenId, Reason: ReasonRefreshFailed, GrantedAt: stored.GrantedAt}
+			reason := ReasonRefreshFailed
+			if stored.RefreshExpiresAt > 0 && time.Now().UnixMilli() >= stored.RefreshExpiresAt {
+				reason = ReasonRefreshExpired
+			}
+			return "", &NeedAuthorizationError{UserOpenId: opts.UserOpenId, Reason: reason, GrantedAt: stored.GrantedAt}
 		}
 		return refreshed.AccessToken, nil
 	}

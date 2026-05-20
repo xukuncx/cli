@@ -252,20 +252,24 @@ func asExitError(err error) *output.ExitError {
 	return nil
 }
 
+// securityPolicyCodeString maps a security policy numeric code to a human-readable string.
+func securityPolicyCodeString(code int) string {
+	switch code {
+	case internalauth.LarkErrBlockByPolicyTryAuth:
+		return "challenge_required"
+	case internalauth.LarkErrBlockByPolicy:
+		return "access_denied"
+	default:
+		return strconv.Itoa(code)
+	}
+}
+
 // writeSecurityPolicyError writes the security-policy-specific JSON envelope to w.
 // This format intentionally differs from the standard ErrDetail envelope:
 // it uses string codes ("challenge_required"/"access_denied") and extra fields
 // (retryable, challenge_url) for machine-readable policy error handling.
 func writeSecurityPolicyError(w io.Writer, spErr *internalauth.SecurityPolicyError) {
-	var codeStr string
-	switch spErr.Code {
-	case internalauth.LarkErrBlockByPolicyTryAuth:
-		codeStr = "challenge_required"
-	case internalauth.LarkErrBlockByPolicy:
-		codeStr = "access_denied"
-	default:
-		codeStr = strconv.Itoa(spErr.Code)
-	}
+	codeStr := securityPolicyCodeString(spErr.Code)
 
 	errData := map[string]interface{}{
 		"type":      "auth_error",
@@ -361,15 +365,7 @@ func availableSubcommandNames(cmd *cobra.Command) []string {
 
 // logSecurityPolicyError logs a security policy error using tracking.LogAuthError.
 func logSecurityPolicyError(spErr *internalauth.SecurityPolicyError) {
-	var codeStr string
-	switch spErr.Code {
-	case internalauth.LarkErrBlockByPolicyTryAuth:
-		codeStr = "challenge_required"
-	case internalauth.LarkErrBlockByPolicy:
-		codeStr = "access_denied"
-	default:
-		codeStr = strconv.Itoa(spErr.Code)
-	}
+	codeStr := securityPolicyCodeString(spErr.Code)
 	errMsg := fmt.Sprintf("reason=security_policy code=%s message=%q", codeStr, spErr.Message)
 	tracking.LogAuthError("auth", "security_policy", fmt.Errorf(errMsg))
 }
