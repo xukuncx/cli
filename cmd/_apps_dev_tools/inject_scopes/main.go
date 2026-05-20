@@ -4,7 +4,8 @@
 //
 // NOTE: this directory starts with "_" so `go build ./...` / `go test ./...` ignore it.
 // Run explicitly:
-//   go run ./cmd/_apps_dev_tools/inject_scopes <appId> <userOpenId> <scope1> [scope2 ...]
+//
+//	go run ./cmd/_apps_dev_tools/inject_scopes <appId> <userOpenId> <scope1> [scope2 ...]
 //
 // Caveat: every time lark-cli refreshes the UAT (server-side refresh),
 // the server-provided scope list overwrites this injection. Re-run after refresh.
