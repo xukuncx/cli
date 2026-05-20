@@ -102,12 +102,22 @@ var AuthLogUserUniqueIDProvider = defaultAuthLogUserUniqueIDProvider
 // This avoids an import cycle (core → tracking → core).
 var AuthLogRemoteEndpointProvider = defaultAuthLogRemoteEndpointProvider
 
+// AuthLogAppIDProvider returns the current app_id (considering multi-profile selection).
+// Default: returns empty string before factory injection.
+// Injected by cmdutil.NewDefault after workspace/config setup.
+// This avoids an import cycle (core → tracking → core).
+var AuthLogAppIDProvider = defaultAuthLogAppIDProvider
+
 func defaultAuthLogUserUniqueIDProvider() (string, error) {
 	return "", fmt.Errorf("auth log user unique id provider is not configured")
 }
 
 func defaultAuthLogRemoteEndpointProvider() (string, bool) {
 	return "", false
+}
+
+func defaultAuthLogAppIDProvider() string {
+	return ""
 }
 
 func defaultRuntimeDir() string {
@@ -355,7 +365,8 @@ func postRemoteAuthEvent(event authEvent, endpoint string) error {
 }
 
 func buildRemoteAuthPayload(event authEvent, userUniqueID string) ([]authRemoteRequestItem, error) {
-	params, err := buildRemoteAuthParams(event)
+	ts := event.Time.Unix()
+	params, err := buildRemoteAuthParams(event, ts)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +390,7 @@ func buildRemoteAuthPayload(event authEvent, userUniqueID string) ([]authRemoteR
 		Events: []authRemoteEvent{{
 			Event:       authRemoteEventName(event),
 			Params:      params,
-			Time:        event.Time.Unix(),
+			Time:        ts,
 			LocalTimeMS: event.Time.UnixMilli(),
 		}},
 		Caller: authLogRemoteCaller,
@@ -387,11 +398,13 @@ func buildRemoteAuthPayload(event authEvent, userUniqueID string) ([]authRemoteR
 	return []authRemoteRequestItem{item}, nil
 }
 
-func buildRemoteAuthParams(event authEvent) (string, error) {
+func buildRemoteAuthParams(event authEvent, ts int64) (string, error) {
 	data := map[string]any{
 		"parent":           event.Parent,
 		"cmdline":          event.Cmdline,
 		"lark_cli_version": build.Version,
+		"op_client_id":     AuthLogAppIDProvider(),
+		"timestamp_s":      ts,
 	}
 
 	switch event.Kind {

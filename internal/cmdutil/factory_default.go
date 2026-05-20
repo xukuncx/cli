@@ -58,6 +58,13 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 	tracking.RuntimeDirFunc = core.GetRuntimeDir
 	tracking.AuthLogUserUniqueIDProvider = cachedAuthLogUserUniqueIDProvider()
 	tracking.AuthLogRemoteEndpointProvider = cachedAuthLogRemoteEndpointProvider(inv.Profile)
+	tracking.AuthLogAppIDProvider = func() string {
+		cfg, err := f.Config()
+		if err != nil {
+			return ""
+		}
+		return cfg.AppID
+	}
 
 	// Phase 0: FileIO provider (no dependency)
 	f.FileIOProvider = fileio.GetProvider()
