@@ -79,28 +79,6 @@ func logAuthFailureReason(exitErr *output.ExitError) {
 	}
 }
 
-// extractNeedAuthorizationError extracts NeedAuthorizationError from an error,
-// checking both direct errors and wrapped errors.
-func extractNeedAuthorizationError(err error, target **internalauth.NeedAuthorizationError) bool {
-	if err == nil {
-		return false
-	}
-
-	if internalauth.IsNeedUserAuthorizationError(err) {
-		// Try to extract the actual NeedAuthorizationError using errors.As
-		var needAuthErr *internalauth.NeedAuthorizationError
-		if errors.As(err, &needAuthErr) {
-			*target = needAuthErr
-			return true
-		}
-
-		// Fallback: create a synthetic error with info from message
-		*target = &internalauth.NeedAuthorizationError{UserOpenId: "unknown"}
-		return true
-	}
-	return false
-}
-
 // buildAuthFailureErrorMessage constructs a detailed error message for auth failure logging.
 func buildAuthFailureErrorMessage(err *internalauth.NeedAuthorizationError) string {
 	if err == nil {
