@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	authLogRemoteCaller  = "larksuite-cli"
+	authLogRemoteCaller  = "lark-cli"
 	authLogRemoteAppID   = 1011422
 	authLogRemoteTimeout = 3 * time.Second
 )
@@ -95,12 +95,19 @@ var AuthLogUserUniqueIDProvider = loadOrCreateUserUniqueID
 
 // AuthLogBrand is the current brand (e.g. "feishu", "lark").
 // When the brand is not "feishu", remote auth log reporting is disabled.
-// Set once by cmdutil.NewDefault after workspace/config setup.
+// Set lazily by SetTrackingFromConfig after successful config resolution.
 var AuthLogBrand string
 
 // AuthLogAppID is the current app_id (considering multi-profile selection).
-// Set once by cmdutil.NewDefault after workspace/config setup.
+// Set lazily by SetTrackingFromConfig after successful config resolution.
 var AuthLogAppID string
+
+// SetTrackingFromConfig sets the tracking globals from a resolved config.
+// Call this only after config resolution succeeds — never in constructors.
+func SetTrackingFromConfig(brand string, appID string) {
+	AuthLogBrand = brand
+	AuthLogAppID = appID
+}
 
 var userUniqueIDMu sync.Mutex
 

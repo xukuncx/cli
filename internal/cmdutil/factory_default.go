@@ -76,14 +76,9 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 		}
 		cfg := acct.ToCliConfig()
 		registry.InitWithBrand(cfg.Brand)
+		tracking.SetTrackingFromConfig(string(cfg.Brand), cfg.AppID)
 		return cfg, nil
 	})
-
-	// Set tracking brand/app_id after Config is available.
-	if cfg, err := f.Config(); err == nil {
-		tracking.AuthLogBrand = string(cfg.Brand)
-		tracking.AuthLogAppID = cfg.AppID
-	}
 
 	// Phase 4: LarkClient from Credential (placeholder AppSecret)
 	f.LarkClient = cachedLarkClientFunc(f)
