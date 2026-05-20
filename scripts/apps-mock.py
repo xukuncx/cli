@@ -12,7 +12,7 @@ from urllib.parse import urlparse, parse_qs
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else 'success'
 VERBOSE = os.environ.get('MOCK_VERBOSE') == '1'
-BASE = '/open-apis/miaoda/v1'
+BASE = '/open-apis/spark/v1'  # 对齐 BOE 后端实际注册路径
 
 def route(method, path):
     if method == 'POST' and path == f'{BASE}/apps':
@@ -23,6 +23,8 @@ def route(method, path):
         return 'update'
     if method == 'PUT' and re.match(rf'^{re.escape(BASE)}/apps/[^/]+/access-scope$', path):
         return 'access_scope'
+    if method == 'GET' and re.match(rf'^{re.escape(BASE)}/apps/[^/]+/access-scope$', path):
+        return 'access_scope_get'
     if method == 'POST' and re.match(rf'^{re.escape(BASE)}/apps/[^/]+/upload_and_release_html_code$', path):
         return 'publish'
     return None
@@ -39,6 +41,13 @@ def build_response(action):
         'update':       {'app_id': 'app_mock_001', 'name': 'Mock v2', 'updated_at': '2026-05-18T10:05:00Z'},
         'list':         {'items': [{'app_id': 'app_mock_001', 'name': 'Mock App'}], 'page_token': '', 'has_more': False},
         'access_scope': {},
+        'access_scope_get': {
+            'scope': 3,
+            'users': ['ou_mock_user_1', 'ou_mock_user_2'],
+            'departments': ['od_mock_dept_1'],
+            'chats': ['oc_mock_chat_1'],
+            'apply_config': {'enabled': True, 'approvers': ['ou_mock_approver']},
+        },
         'publish':      {'url': 'http://localhost:8181/preview/app_mock_001'},
     }
     return {'code': 0, 'msg': 'success', 'data': payloads.get(action, {})}, 200, None
