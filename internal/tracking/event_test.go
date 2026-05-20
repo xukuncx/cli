@@ -16,28 +16,28 @@ import (
 	"github.com/larksuite/cli/internal/build"
 )
 
-func TestAuthLogDir_UsesValidatedLogDirEnv(t *testing.T) {
+func TestLogDir_UsesValidatedLogDirEnv(t *testing.T) {
 	base := t.TempDir()
 	base, _ = filepath.EvalSymlinks(base)
 	t.Setenv("LARKSUITE_CLI_LOG_DIR", filepath.Join(base, "logs", "..", "auth"))
 	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", "")
 
-	got := authLogDir()
+	got := logDir()
 	want := filepath.Join(base, "auth")
 	if got != want {
-		t.Fatalf("authLogDir() = %q, want %q", got, want)
+		t.Fatalf("logDir() = %q, want %q", got, want)
 	}
 }
 
-func TestAuthLogDir_InvalidLogDirFallsBackToConfigDir(t *testing.T) {
+func TestLogDir_InvalidLogDirFallsBackToConfigDir(t *testing.T) {
 	t.Setenv("LARKSUITE_CLI_LOG_DIR", "relative-logs")
 	configDir := t.TempDir()
 	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", configDir)
 
-	got := authLogDir()
+	got := logDir()
 	want := filepath.Join(configDir, "logs")
 	if got != want {
-		t.Fatalf("authLogDir() = %q, want %q", got, want)
+		t.Fatalf("logDir() = %q, want %q", got, want)
 	}
 }
 
@@ -66,8 +66,8 @@ func TestBuildRemoteAuthPayload_Response(t *testing.T) {
 	if item.Header.AppName != "" {
 		t.Fatalf("app_name = %q, want empty", item.Header.AppName)
 	}
-	if item.Caller != authLogRemoteCaller {
-		t.Fatalf("caller = %q, want %q", item.Caller, authLogRemoteCaller)
+	if item.Caller != remoteCaller {
+		t.Fatalf("caller = %q, want %q", item.Caller, remoteCaller)
 	}
 	if len(item.Events) != 1 {
 		t.Fatalf("events len = %d, want 1", len(item.Events))
@@ -105,7 +105,7 @@ func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
 	}
 
 	var gotMethod, gotContentType string
-	var gotPayload []authRemoteRequestItem
+	var gotPayload []remoteRequestItem
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotContentType = r.Header.Get("Content-Type")
@@ -173,7 +173,7 @@ func TestPostRemoteAuthEvent_FallbackGeneratesUUIDv7(t *testing.T) {
 		Status:  200,
 	}
 
-	var gotPayload []authRemoteRequestItem
+	var gotPayload []remoteRequestItem
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {

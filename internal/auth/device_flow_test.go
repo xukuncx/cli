@@ -100,9 +100,9 @@ func TestRequestDeviceAuthorization_LogsResponse(t *testing.T) {
 	}
 }
 
-// TestFormatAuthCmdline_TruncatesExtraArgs verifies that long command lines are truncated.
-func TestFormatAuthCmdline_TruncatesExtraArgs(t *testing.T) {
-	got := tracking.FormatAuthCmdline([]string{
+// TestFormatCmdline_TruncatesExtraArgs verifies that long command lines are truncated.
+func TestFormatCmdline_TruncatesExtraArgs(t *testing.T) {
+	got := tracking.FormatCmdline([]string{
 		"lark-cli",
 		"auth",
 		"login",

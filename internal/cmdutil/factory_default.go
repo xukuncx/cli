@@ -49,9 +49,8 @@ func NewDefault(streams *IOStreams, inv InvocationContext) *Factory {
 	ws := core.DetectWorkspaceFromEnv(os.Getenv)
 	core.SetCurrentWorkspace(ws)
 
-	// Inject workspace-aware dir into tracking's runtime system.
-	// This breaks the core↔tracking import cycle by using a function variable.
-	tracking.RuntimeDirFunc = core.GetRuntimeDir
+	// Initialize tracking globals
+	initTrackingGlobals(inv.Profile)
 
 	// Phase 0: FileIO provider (no dependency)
 	f.FileIOProvider = fileio.GetProvider()
@@ -169,4 +168,18 @@ func buildCredentialProvider(deps credentialDeps) *credential.CredentialProvider
 	// provider clears unverified identity fields), so silencing the
 	// warning is safe.
 	return credential.NewCredentialProvider(providers, defaultAcct, defaultToken, deps.HttpClient)
+}
+
+func initTrackingGlobals(profileOverride string) {
+	tracking.RuntimeDirFunc = core.GetRuntimeDir
+
+	raw, err := core.LoadMultiAppConfig()
+	if err != nil {
+		return
+	}
+	app := raw.CurrentAppConfig(profileOverride)
+	if app == nil {
+		return
+	}
+	tracking.SetTrackingFromConfig(string(app.Brand), app.AppId)
 }
