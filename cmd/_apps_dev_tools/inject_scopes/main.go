@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Lark Technologies Pte. Ltd.
+// SPDX-License-Identifier: MIT
+
 // Dev-only tool: inject scope strings into the local stored UAT.
 // Workaround for BOE not yet registering miaoda:app:* scopes so that
 // local mock testing can pass framework scope-check.
@@ -53,8 +56,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("OK: injected %d new scope(s); total %d\n", added, len(out))
+	fmt.Fprintf(os.Stderr, "OK: injected %d new scope(s); total %d\n", added, len(out))
 	for _, s := range extra {
-		fmt.Printf("  %s\n", s)
+		fmt.Fprintf(os.Stderr, "  %s\n", s)
 	}
 }

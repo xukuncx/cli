@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Lark Technologies Pte. Ltd.
+# SPDX-License-Identifier: MIT
 """Apps domain mock OAPI server.
 
 Usage:
@@ -69,12 +71,18 @@ class H(http.server.BaseHTTPRequestHandler):
                 print(f'[mock]   multipart boundary={boundary[:20]}...', file=sys.stderr)
                 print(f'[mock]   first field name = {m.group(1).decode() if m else "<none>"}', file=sys.stderr)
         if action is None:
-            self.send_response(404); self.end_headers(); return
+            self.send_response(404)
+            self.end_headers()
+            return
         payload, code, raw = build_response(action)
         self.send_response(code)
         if raw is not None:
-            self.send_header('Content-Type', 'text/plain'); self.end_headers(); self.wfile.write(raw); return
-        self.send_header('Content-Type', 'application/json'); self.end_headers()
+            self.send_header('Content-Type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
         self.wfile.write(json.dumps(payload).encode())
 
     def do_GET(self):    self._handle('GET')
