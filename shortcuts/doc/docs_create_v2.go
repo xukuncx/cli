@@ -5,6 +5,7 @@ package doc
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/larksuite/cli/shortcuts/common"
@@ -21,6 +22,18 @@ func v2CreateFlags() []common.Flag {
 }
 
 func validateCreateV2(_ context.Context, runtime *common.RuntimeContext) error {
+	// Resolve --markdown shorthand for v2 path.
+	if md := runtime.Str("markdown"); md != "" {
+		if runtime.Str("content") != "" {
+			return common.FlagErrorf("--markdown and --content are mutually exclusive")
+		}
+		if runtime.Changed("doc-format") && runtime.Str("doc-format") != "markdown" {
+			return common.FlagErrorf("--markdown implies --doc-format markdown, but --doc-format %q was specified", runtime.Str("doc-format"))
+		}
+		runtime.Cmd.Flags().Set("content", md)
+		runtime.Cmd.Flags().Set("doc-format", "markdown")
+	}
+
 	if runtime.Str("content") == "" {
 		return common.FlagErrorf("--content is required")
 	}
@@ -43,6 +56,11 @@ func dryRunCreateV2(_ context.Context, runtime *common.RuntimeContext) *common.D
 }
 
 func executeCreateV2(_ context.Context, runtime *common.RuntimeContext) error {
+	// Pre-execution warning: format mismatch detection.
+	if w := checkDocsFormatMismatch(runtime.Str("doc-format"), runtime.Str("content")); w != "" {
+		fmt.Fprintf(runtime.IO().ErrOut, "warning: %s\n", w)
+	}
+
 	body := buildCreateBody(runtime)
 
 	data, err := doDocAPI(runtime, "POST", "/open-apis/docs_ai/v1/documents", body)
@@ -50,10 +68,26 @@ func executeCreateV2(_ context.Context, runtime *common.RuntimeContext) error {
 		return err
 	}
 
+	// Post-execution: check server response for silent failures.
+	warnDocsCreateV2Response(runtime, data)
+
 	augmentDocsCreatePermission(runtime, data)
 	fallbackDocsCreateURLV2(runtime, data)
 	runtime.OutRaw(data, nil)
 	return nil
+}
+
+// warnDocsCreateV2Response inspects the server response for create operations
+// and emits warnings when the result indicates a silent failure — e.g. the
+// server reported "success" but created zero blocks, which typically means the
+// content format did not match --doc-format.
+func warnDocsCreateV2Response(runtime *common.RuntimeContext, data map[string]interface{}) {
+	result := common.GetString(data, "result")
+	if result == "failed" {
+		fmt.Fprintf(runtime.IO().ErrOut,
+			"warning: server reported result=%q — the document creation failed. "+
+				"Check that --doc-format matches your content format.\n", result)
+	}
 }
 
 func buildCreateBody(runtime *common.RuntimeContext) map[string]interface{} {

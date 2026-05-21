@@ -16,14 +16,18 @@ import (
 func v1CreateFlags() []common.Flag {
 	return []common.Flag{
 		{Name: "title", Desc: "document title", Hidden: true},
-		{Name: "markdown", Desc: "Markdown content (Lark-flavored)", Hidden: true, Input: []string{common.File, common.Stdin}},
+		{Name: "markdown", Desc: "Markdown content (v1: Lark-flavored; v2: shorthand for --content <value> --doc-format markdown)", Hidden: true, Input: []string{common.File, common.Stdin}},
 		{Name: "folder-token", Desc: "parent folder token", Hidden: true},
 		{Name: "wiki-node", Desc: "wiki node token", Hidden: true},
 		{Name: "wiki-space", Desc: "wiki space ID (use my_library for personal library)", Hidden: true},
 	}
 }
 
-var docsCreateFlagVersions = buildFlagVersionMap(v1CreateFlags(), v2CreateFlags())
+var docsCreateFlagVersions = func() map[string]string {
+	m := buildFlagVersionMap(v1CreateFlags(), v2CreateFlags())
+	delete(m, "markdown") // shared between v1 and v2
+	return m
+}()
 
 // useV2Create returns true when the v2 (OpenAPI) create path should be used.
 // Explicit --api-version v2 takes priority; otherwise auto-detect by v2-only flags.

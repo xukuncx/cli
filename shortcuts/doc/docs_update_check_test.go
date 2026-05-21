@@ -354,6 +354,116 @@ func TestCheckDocsUpdateBoldItalic(t *testing.T) {
 	}
 }
 
+func TestCheckDocsFormatMismatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		docFmt   string
+		content  string
+		wantHint bool
+	}{
+		{
+			name:     "markdown content with xml format emits warning",
+			docFmt:   "xml",
+			content:  "## Heading\n\n- Item 1\n- Item 2",
+			wantHint: true,
+		},
+		{
+			name:     "markdown content with markdown format is fine",
+			docFmt:   "markdown",
+			content:  "## Heading\n\n- Item 1\n- Item 2",
+			wantHint: false,
+		},
+		{
+			name:     "xml content with xml format is fine",
+			docFmt:   "xml",
+			content:  `<h2>Heading</h2><p>text</p>`,
+			wantHint: false,
+		},
+		{
+			name:     "empty content is fine",
+			docFmt:   "xml",
+			content:  "",
+			wantHint: false,
+		},
+		{
+			name:     "single markdown marker below threshold",
+			docFmt:   "xml",
+			content:  "## Heading\n\nJust a paragraph of text here.",
+			wantHint: false,
+		},
+		{
+			name:     "heading and list triggers warning",
+			docFmt:   "xml",
+			content:  "# Title\n\n- first\n- second",
+			wantHint: true,
+		},
+		{
+			name:     "heading and blockquote triggers warning",
+			docFmt:   "xml",
+			content:  "## Note\n\n> This is a quote",
+			wantHint: true,
+		},
+		{
+			name:     "heading and code fence triggers warning",
+			docFmt:   "xml",
+			content:  "## Code\n\n```go\nfmt.Println()\n```",
+			wantHint: true,
+		},
+		{
+			name:     "content starting with angle bracket is not flagged",
+			docFmt:   "xml",
+			content:  "<h2>Heading</h2>\n<p>Some text</p>",
+			wantHint: false,
+		},
+		{
+			name:     "content with leading whitespace then angle bracket",
+			docFmt:   "xml",
+			content:  "  \n<h2>Heading</h2>",
+			wantHint: false,
+		},
+		{
+			name:     "ordered list and link triggers warning",
+			docFmt:   "xml",
+			content:  "1. First item\n\n[link](https://example.com)",
+			wantHint: true,
+		},
+		{
+			name:     "horizontal rule and heading triggers warning",
+			docFmt:   "xml",
+			content:  "---\n\n## Section",
+			wantHint: true,
+		},
+		{
+			name:     "image and heading triggers warning",
+			docFmt:   "xml",
+			content:  "![alt](img.png)\n\n## Title",
+			wantHint: true,
+		},
+		{
+			name:     "plain text with no markdown markers",
+			docFmt:   "xml",
+			content:  "Just some plain text\nwith no special markers\nat all.",
+			wantHint: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := checkDocsFormatMismatch(tt.docFmt, tt.content)
+			hasHint := got != ""
+			if hasHint != tt.wantHint {
+				t.Fatalf("checkDocsFormatMismatch(%q, %q) = %q, wantHint=%v",
+					tt.docFmt, tt.content, got, tt.wantHint)
+			}
+			if tt.wantHint && !strings.Contains(got, "--doc-format") {
+				t.Errorf("warning should mention --doc-format, got: %s", got)
+			}
+		})
+	}
+}
+
 func TestDocsUpdateWarningsAggregates(t *testing.T) {
 	t.Parallel()
 
