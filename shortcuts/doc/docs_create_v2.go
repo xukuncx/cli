@@ -56,11 +56,6 @@ func dryRunCreateV2(_ context.Context, runtime *common.RuntimeContext) *common.D
 }
 
 func executeCreateV2(_ context.Context, runtime *common.RuntimeContext) error {
-	// Pre-execution warning: format mismatch detection.
-	if w := checkDocsFormatMismatch(runtime.Str("doc-format"), runtime.Str("content")); w != "" {
-		fmt.Fprintf(runtime.IO().ErrOut, "warning: %s\n", w)
-	}
-
 	body := buildCreateBody(runtime)
 
 	data, err := doDocAPI(runtime, "POST", "/open-apis/docs_ai/v1/documents", body)

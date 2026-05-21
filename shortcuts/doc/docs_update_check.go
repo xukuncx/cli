@@ -271,68 +271,6 @@ func fenceIndentOK(line string) (string, bool) {
 	return "", true
 }
 
-// checkDocsFormatMismatch detects when content appears to be Markdown but
-// --doc-format is "xml" (the default). The server will try to parse the
-// content as XML and likely produce zero blocks, returning a misleading
-// "success" result. This heuristic scans the first 20 non-blank lines for
-// Markdown structural markers; if at least 2 match, it returns a warning.
-func checkDocsFormatMismatch(docFormat, content string) string {
-	if docFormat != "xml" {
-		return ""
-	}
-	if content == "" {
-		return ""
-	}
-	// If content starts with '<', very likely XML — skip.
-	trimmed := strings.TrimLeft(content, " \t\n\r")
-	if trimmed != "" && trimmed[0] == '<' {
-		return ""
-	}
-
-	matchCount := 0
-	lineCount := 0
-	for _, line := range strings.Split(content, "\n") {
-		stripped := strings.TrimLeft(line, " \t")
-		if stripped == "" {
-			continue
-		}
-		lineCount++
-		if lineCount > 20 {
-			break
-		}
-		for _, pat := range markdownIndicatorPatterns {
-			if pat.MatchString(stripped) {
-				matchCount++
-				break
-			}
-		}
-	}
-
-	if matchCount >= 2 {
-		return "content appears to be Markdown but --doc-format is 'xml' (default). " +
-			"The server will try to parse it as XML, which will likely fail silently. " +
-			"Add --doc-format markdown or use --markdown to fix this."
-	}
-	return ""
-}
-
-// markdownIndicatorPatterns lists line-level patterns that strongly suggest
-// Markdown content. Used by checkDocsFormatMismatch to detect format
-// mismatches before the request is sent.
-var markdownIndicatorPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`^#{1,6}\s`),     // ATX headings
-	regexp.MustCompile(`^[-*+]\s`),      // Unordered list items
-	regexp.MustCompile(`^>\s`),          // Blockquote
-	regexp.MustCompile(`^\d+\.\s`),      // Ordered list
-	regexp.MustCompile(`^---+\s*$`),     // Horizontal rule ---
-	regexp.MustCompile(`^\*\*\*+\s*$`),  // Horizontal rule ***
-	regexp.MustCompile(`^___+\s*$`),     // Horizontal rule ___
-	regexp.MustCompile("^```"),          // Fenced code block (backtick)
-	regexp.MustCompile("^~~~"),          // Fenced code block (tilde)
-	regexp.MustCompile(`^\[.*\]\(.*\)`), // Link [text](url)
-	regexp.MustCompile(`^!\[`),          // Image ![alt](url)
-}
-
 // leadingRun returns the longest prefix of s made up of the byte c.
 func leadingRun(s string, c byte) string {
 	i := 0
