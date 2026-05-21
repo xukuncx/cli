@@ -82,12 +82,12 @@ func TestRangeOperationsShortcuts_DryRun(t *testing.T) {
 			},
 		},
 		{
-			name:     "+rows-resize --type auto omits --size",
+			name:     "+rows-resize single row (start==end) keeps N:N range",
 			sc:       RowsResize,
 			args:     []string{"--url", testURL, "--sheet-id", testSheetID, "--start", "0", "--end", "0", "--type", "auto"},
 			toolName: "resize_range",
 			wantInput: map[string]interface{}{
-				"range":         "1",
+				"range":         "1:1",
 				"resize_height": map[string]interface{}{"type": "auto"},
 			},
 		},

@@ -74,7 +74,7 @@ var CellsClear = common.Shortcut{
 	},
 }
 
-func cellsClearInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
+func cellsClearInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
 	scope := runtime.Str("scope")
 	clearType := "contents"
 	switch scope {
@@ -149,7 +149,7 @@ func newMergeShortcut(command, desc, op string, withMergeType bool) common.Short
 	}
 }
 
-func mergeInput(runtime *common.RuntimeContext, token, sheetID, sheetName, op string, withMergeType bool) map[string]interface{} {
+func mergeInput(runtime flagView, token, sheetID, sheetName, op string, withMergeType bool) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":  token,
 		"range":     strings.TrimSpace(runtime.Str("range")),
@@ -293,10 +293,12 @@ func autoSuffix(dimension string) string {
 }
 
 // resizeInput builds the resize_range tool input. dimension is "row" /
-// "column"; --end is inclusive on the CLI surface, dimRange wants
-// exclusive end, so it is bumped by one here.
-func resizeInput(runtime *common.RuntimeContext, token, sheetID, sheetName, dimension string) map[string]interface{} {
-	rangeStr := dimRange(dimension, runtime.Int("start"), runtime.Int("end")+1)
+// "column"; --end is inclusive on the CLI surface, dimRangeFull wants
+// exclusive end, so it is bumped by one here. dimRangeFull (not dimRange) is
+// used so a single row/column still emits "N:N" — resize_range rejects a bare
+// "N".
+func resizeInput(runtime flagView, token, sheetID, sheetName, dimension string) map[string]interface{} {
+	rangeStr := dimRangeFull(dimension, runtime.Int("start"), runtime.Int("end")+1)
 	input := map[string]interface{}{
 		"excel_id": token,
 		"range":    rangeStr,
@@ -504,7 +506,7 @@ func transformExecuteFn(op string, withPasteType, _ bool) func(context.Context, 
 	}
 }
 
-func transformMoveCopyInput(runtime *common.RuntimeContext, token, sheetID, sheetName, op string, withPasteType bool) map[string]interface{} {
+func transformMoveCopyInput(runtime flagView, token, sheetID, sheetName, op string, withPasteType bool) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":          token,
 		"operation":         op,
@@ -537,7 +539,7 @@ func pasteTypeToTool(pt string) string {
 	return "all"
 }
 
-func rangeFillInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
+func rangeFillInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":          token,
 		"operation":         "fill",
@@ -560,7 +562,7 @@ func fillSeriesToToolType(seriesType string) string {
 	return "fillSeries"
 }
 
-func rangeSortInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) (map[string]interface{}, error) {
+func rangeSortInput(runtime flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
 	keys, err := requireJSONArray(runtime, "sort-keys")
 	if err != nil {
 		return nil, err

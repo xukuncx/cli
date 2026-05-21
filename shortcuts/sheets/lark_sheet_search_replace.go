@@ -86,7 +86,7 @@ func searchInput(runtime *common.RuntimeContext, token, sheetID, sheetName strin
 
 // searchReplaceOptions packs the four shared boolean flags into the tool's
 // `options` sub-object. Empty result → caller should omit the field.
-func searchReplaceOptions(runtime *common.RuntimeContext) map[string]interface{} {
+func searchReplaceOptions(runtime flagView) map[string]interface{} {
 	opts := map[string]interface{}{}
 	if runtime.Bool("match-case") {
 		opts["match_case"] = true
@@ -155,7 +155,7 @@ var CellsReplace = common.Shortcut{
 	},
 }
 
-func replaceInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
+func replaceInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":     token,
 		"search_term":  runtime.Str("find"),

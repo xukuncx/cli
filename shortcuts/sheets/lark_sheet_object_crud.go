@@ -42,8 +42,8 @@ type objectCRUDSpec struct {
 	// shortcut-specific flat flags into the input (typically into the
 	// properties map). The callback is responsible for navigating to the
 	// right nesting level.
-	enhanceCreateInput func(rt *common.RuntimeContext, input map[string]interface{})
-	enhanceUpdateInput func(rt *common.RuntimeContext, input map[string]interface{})
+	enhanceCreateInput func(rt flagView, input map[string]interface{})
+	enhanceUpdateInput func(rt flagView, input map[string]interface{})
 }
 
 func newObjectCreateShortcut(spec objectCRUDSpec) common.Shortcut {
@@ -96,7 +96,7 @@ func newObjectCreateShortcut(spec objectCRUDSpec) common.Shortcut {
 	}
 }
 
-func objectCreateInput(runtime *common.RuntimeContext, token, sheetID, sheetName string, spec objectCRUDSpec) (map[string]interface{}, error) {
+func objectCreateInput(runtime flagView, token, sheetID, sheetName string, spec objectCRUDSpec) (map[string]interface{}, error) {
 	props, err := requireJSONObject(runtime, "properties")
 	if err != nil {
 		return nil, err
@@ -166,7 +166,7 @@ func newObjectUpdateShortcut(spec objectCRUDSpec) common.Shortcut {
 	}
 }
 
-func objectUpdateInput(runtime *common.RuntimeContext, token, sheetID, sheetName string, spec objectCRUDSpec) (map[string]interface{}, error) {
+func objectUpdateInput(runtime flagView, token, sheetID, sheetName string, spec objectCRUDSpec) (map[string]interface{}, error) {
 	props, err := requireJSONObject(runtime, "properties")
 	if err != nil {
 		return nil, err
@@ -233,7 +233,7 @@ func newObjectDeleteShortcut(spec objectCRUDSpec) common.Shortcut {
 	}
 }
 
-func objectDeleteInput(runtime *common.RuntimeContext, token, sheetID, sheetName string, spec objectCRUDSpec) map[string]interface{} {
+func objectDeleteInput(runtime flagView, token, sheetID, sheetName string, spec objectCRUDSpec) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":  token,
 		"operation": "delete",
@@ -265,7 +265,7 @@ var pivotSpec = objectCRUDSpec{
 	toolName:      "manage_pivot_table_object",
 	idFlag:        "pivot-table-id",
 	idField:       "pivot_table_id",
-	enhanceCreateInput: func(rt *common.RuntimeContext, input map[string]interface{}) {
+	enhanceCreateInput: func(rt flagView, input map[string]interface{}) {
 		if v := strings.TrimSpace(rt.Str("target-sheet-id")); v != "" {
 			input["target_sheet_id"] = v
 		}
@@ -291,7 +291,7 @@ var PivotDelete = newObjectDeleteShortcut(pivotSpec)
 // conditional format — CLI surface uses --rule-id (short), wired to the
 // tool's conditional_format_id on the wire. --rule-type and --ranges are
 // hoisted out of properties (both required, set on every CRUD write).
-var condFormatEnhance = func(rt *common.RuntimeContext, input map[string]interface{}) {
+var condFormatEnhance = func(rt flagView, input map[string]interface{}) {
 	props, _ := input["properties"].(map[string]interface{})
 	if props == nil {
 		return
@@ -342,7 +342,7 @@ var SparklineDelete = newObjectDeleteShortcut(sparklineSpec)
 // 10 flat flags. Caller is responsible for marking required flags via
 // cobra Required:true; this function only enforces the image_token XOR
 // image_uri pair (one must be set).
-func floatImageProperties(runtime *common.RuntimeContext) (map[string]interface{}, error) {
+func floatImageProperties(runtime flagView) (map[string]interface{}, error) {
 	token := strings.TrimSpace(runtime.Str("image-token"))
 	uri := strings.TrimSpace(runtime.Str("image-uri"))
 	if token == "" && uri == "" {
@@ -440,7 +440,7 @@ func newFloatImageWriteShortcut(command, description, op string, withIDFlag, isH
 	}
 }
 
-func floatImageWriteInput(runtime *common.RuntimeContext, token, sheetID, sheetName, op string, withIDFlag bool) (map[string]interface{}, error) {
+func floatImageWriteInput(runtime flagView, token, sheetID, sheetName, op string, withIDFlag bool) (map[string]interface{}, error) {
 	props, err := floatImageProperties(runtime)
 	if err != nil {
 		return nil, err
@@ -482,7 +482,7 @@ var FloatImageDelete = newObjectDeleteShortcut(floatImageDeleteSpec)
 // it dispatches via the same One-OpenAPI endpoint as every other shortcut.
 // --view-name and --range are hoisted out of properties (optional on both
 // create and update; they always win over properties.{view_name, range}).
-var filterViewEnhance = func(rt *common.RuntimeContext, input map[string]interface{}) {
+var filterViewEnhance = func(rt flagView, input map[string]interface{}) {
 	props, _ := input["properties"].(map[string]interface{})
 	if props == nil {
 		return
@@ -570,7 +570,7 @@ var FilterCreate = common.Shortcut{
 	},
 }
 
-func filterCreateInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) (map[string]interface{}, error) {
+func filterCreateInput(runtime flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
 	props := map[string]interface{}{
 		"range": strings.TrimSpace(runtime.Str("range")),
 	}
@@ -648,7 +648,7 @@ var FilterUpdate = common.Shortcut{
 	},
 }
 
-func filterUpdateInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) (map[string]interface{}, error) {
+func filterUpdateInput(runtime flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
 	props, err := requireJSONObject(runtime, "properties")
 	if err != nil {
 		return nil, err

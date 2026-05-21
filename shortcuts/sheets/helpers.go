@@ -103,7 +103,7 @@ func sheetSelectorPlaceholder(sheetID, sheetName string) string {
 // parseJSONFlag parses a JSON string from a flag value. Returns nil when the
 // flag is empty (caller decides if that's acceptable). Used by --data /
 // --style / --options / --ranges / --colors and friends.
-func parseJSONFlag(runtime *common.RuntimeContext, name string) (interface{}, error) {
+func parseJSONFlag(runtime flagView, name string) (interface{}, error) {
 	raw := strings.TrimSpace(runtime.Str(name))
 	if raw == "" {
 		return nil, nil
@@ -116,7 +116,7 @@ func parseJSONFlag(runtime *common.RuntimeContext, name string) (interface{}, er
 }
 
 // requireJSONObject is parseJSONFlag + a type assertion to map[string]interface{}.
-func requireJSONObject(runtime *common.RuntimeContext, name string) (map[string]interface{}, error) {
+func requireJSONObject(runtime flagView, name string) (map[string]interface{}, error) {
 	v, err := parseJSONFlag(runtime, name)
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func requireJSONObject(runtime *common.RuntimeContext, name string) (map[string]
 }
 
 // requireJSONArray is parseJSONFlag + a type assertion to []interface{}.
-func requireJSONArray(runtime *common.RuntimeContext, name string) ([]interface{}, error) {
+func requireJSONArray(runtime flagView, name string) ([]interface{}, error) {
 	v, err := parseJSONFlag(runtime, name)
 	if err != nil {
 		return nil, err
@@ -152,7 +152,7 @@ func requireJSONArray(runtime *common.RuntimeContext, name string) ([]interface{
 // buildCellStyleFromFlags reads the 11 flat style flags and returns the
 // cell_styles map expected by set_cell_range. Skips any flag the user
 // didn't set so partial styles work.
-func buildCellStyleFromFlags(runtime *common.RuntimeContext) map[string]interface{} {
+func buildCellStyleFromFlags(runtime flagView) map[string]interface{} {
 	style := map[string]interface{}{}
 	if v := runtime.Str("background-color"); v != "" {
 		style["background_color"] = v
@@ -189,7 +189,7 @@ func buildCellStyleFromFlags(runtime *common.RuntimeContext) map[string]interfac
 
 // borderStylesFromFlag parses --border-styles as a JSON object (top/bottom/
 // left/right with style sub-objects). Returns nil when the flag is empty.
-func borderStylesFromFlag(runtime *common.RuntimeContext) (map[string]interface{}, error) {
+func borderStylesFromFlag(runtime flagView) (map[string]interface{}, error) {
 	if runtime.Str("border-styles") == "" {
 		return nil, nil
 	}

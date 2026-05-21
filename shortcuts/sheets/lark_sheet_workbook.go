@@ -122,7 +122,7 @@ var SheetCreate = common.Shortcut{
 	},
 }
 
-func sheetCreateInput(runtime *common.RuntimeContext, token string) map[string]interface{} {
+func sheetCreateInput(runtime flagView, token string) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":   token,
 		"operation":  "create",
@@ -137,6 +137,42 @@ func sheetCreateInput(runtime *common.RuntimeContext, token string) map[string]i
 	if n := runtime.Int("col-count"); n > 0 {
 		input["columns"] = n
 	}
+	return input
+}
+
+// sheetDeleteInput / sheetRenameInput / sheetVisibilityInput /
+// sheetSetTabColorInput build the modify_workbook_structure body for the
+// matching shortcut. Shared by standalone DryRun/Execute and by the
+// +batch-update sub-op dispatch so both paths emit an identical body.
+func sheetDeleteInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
+	input := map[string]interface{}{"excel_id": token, "operation": "delete"}
+	sheetSelectorForToolInput(input, sheetID, sheetName)
+	return input
+}
+
+func sheetRenameInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
+	input := map[string]interface{}{
+		"excel_id":  token,
+		"operation": "rename",
+		"new_name":  strings.TrimSpace(runtime.Str("title")),
+	}
+	sheetSelectorForToolInput(input, sheetID, sheetName)
+	return input
+}
+
+func sheetVisibilityInput(runtime flagView, token, sheetID, sheetName, op string) map[string]interface{} {
+	input := map[string]interface{}{"excel_id": token, "operation": op}
+	sheetSelectorForToolInput(input, sheetID, sheetName)
+	return input
+}
+
+func sheetSetTabColorInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
+	input := map[string]interface{}{
+		"excel_id":  token,
+		"operation": "set_tab_color",
+		"tab_color": runtime.Str("color"),
+	}
+	sheetSelectorForToolInput(input, sheetID, sheetName)
 	return input
 }
 
@@ -161,9 +197,7 @@ var SheetDelete = common.Shortcut{
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		token, _ := resolveSpreadsheetToken(runtime)
 		sheetID, sheetName, _ := resolveSheetSelector(runtime)
-		input := map[string]interface{}{"excel_id": token, "operation": "delete"}
-		sheetSelectorForToolInput(input, sheetID, sheetName)
-		return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", input)
+		return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", sheetDeleteInput(runtime, token, sheetID, sheetName))
 	},
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		token, err := resolveSpreadsheetToken(runtime)
@@ -174,9 +208,7 @@ var SheetDelete = common.Shortcut{
 		if err != nil {
 			return err
 		}
-		input := map[string]interface{}{"excel_id": token, "operation": "delete"}
-		sheetSelectorForToolInput(input, sheetID, sheetName)
-		out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", input)
+		out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", sheetDeleteInput(runtime, token, sheetID, sheetName))
 		if err != nil {
 			return err
 		}
@@ -213,13 +245,7 @@ var SheetRename = common.Shortcut{
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		token, _ := resolveSpreadsheetToken(runtime)
 		sheetID, sheetName, _ := resolveSheetSelector(runtime)
-		input := map[string]interface{}{
-			"excel_id":  token,
-			"operation": "rename",
-			"new_name":  strings.TrimSpace(runtime.Str("title")),
-		}
-		sheetSelectorForToolInput(input, sheetID, sheetName)
-		return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", input)
+		return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", sheetRenameInput(runtime, token, sheetID, sheetName))
 	},
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		token, err := resolveSpreadsheetToken(runtime)
@@ -230,13 +256,7 @@ var SheetRename = common.Shortcut{
 		if err != nil {
 			return err
 		}
-		input := map[string]interface{}{
-			"excel_id":  token,
-			"operation": "rename",
-			"new_name":  strings.TrimSpace(runtime.Str("title")),
-		}
-		sheetSelectorForToolInput(input, sheetID, sheetName)
-		out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", input)
+		out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", sheetRenameInput(runtime, token, sheetID, sheetName))
 		if err != nil {
 			return err
 		}
@@ -388,7 +408,7 @@ var SheetCopy = common.Shortcut{
 	},
 }
 
-func sheetCopyInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
+func sheetCopyInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
 	input := map[string]interface{}{"excel_id": token, "operation": "duplicate"}
 	sheetSelectorForToolInput(input, sheetID, sheetName)
 	if t := strings.TrimSpace(runtime.Str("title")); t != "" {
@@ -430,9 +450,7 @@ func newSheetVisibilityShortcut(command, desc, op string) common.Shortcut {
 		DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 			token, _ := resolveSpreadsheetToken(runtime)
 			sheetID, sheetName, _ := resolveSheetSelector(runtime)
-			input := map[string]interface{}{"excel_id": token, "operation": op}
-			sheetSelectorForToolInput(input, sheetID, sheetName)
-			return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", input)
+			return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", sheetVisibilityInput(runtime, token, sheetID, sheetName, op))
 		},
 		Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 			token, err := resolveSpreadsheetToken(runtime)
@@ -443,9 +461,7 @@ func newSheetVisibilityShortcut(command, desc, op string) common.Shortcut {
 			if err != nil {
 				return err
 			}
-			input := map[string]interface{}{"excel_id": token, "operation": op}
-			sheetSelectorForToolInput(input, sheetID, sheetName)
-			out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", input)
+			out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", sheetVisibilityInput(runtime, token, sheetID, sheetName, op))
 			if err != nil {
 				return err
 			}
@@ -480,13 +496,7 @@ var SheetSetTabColor = common.Shortcut{
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		token, _ := resolveSpreadsheetToken(runtime)
 		sheetID, sheetName, _ := resolveSheetSelector(runtime)
-		input := map[string]interface{}{
-			"excel_id":  token,
-			"operation": "set_tab_color",
-			"tab_color": runtime.Str("color"),
-		}
-		sheetSelectorForToolInput(input, sheetID, sheetName)
-		return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", input)
+		return invokeToolDryRun(token, ToolKindWrite, "modify_workbook_structure", sheetSetTabColorInput(runtime, token, sheetID, sheetName))
 	},
 	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
 		token, err := resolveSpreadsheetToken(runtime)
@@ -497,13 +507,7 @@ var SheetSetTabColor = common.Shortcut{
 		if err != nil {
 			return err
 		}
-		input := map[string]interface{}{
-			"excel_id":  token,
-			"operation": "set_tab_color",
-			"tab_color": runtime.Str("color"),
-		}
-		sheetSelectorForToolInput(input, sheetID, sheetName)
-		out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", input)
+		out, err := callTool(ctx, runtime, token, ToolKindWrite, "modify_workbook_structure", sheetSetTabColorInput(runtime, token, sheetID, sheetName))
 		if err != nil {
 			return err
 		}

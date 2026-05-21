@@ -20,7 +20,7 @@ func TestBatchUpdate_TranslatesShortcutToToolName(t *testing.T) {
 		"--url", testURL,
 		"--operations", `[
 		  {"shortcut":"+cells-set","input":{"sheet_id":"sh1","range":"A1","cells":[[{"value":42}]]}},
-		  {"shortcut":"+dim-insert","input":{"sheet_id":"sh1","range":"1:3"}}
+		  {"shortcut":"+dim-insert","input":{"sheet_id":"sh1","dimension":"row","start":0,"end":3}}
 		]`,
 		"--continue-on-error",
 		"--yes",
@@ -308,7 +308,7 @@ func TestBatchUpdate_DimFreezeInjectsFreeze(t *testing.T) {
 	t.Parallel()
 	body := parseDryRunBody(t, BatchUpdate, []string{
 		"--url", testURL,
-		"--operations", `[{"shortcut":"+dim-freeze","input":{"sheet_id":"sh1","freeze_rows":2}}]`,
+		"--operations", `[{"shortcut":"+dim-freeze","input":{"sheet_id":"sh1","dimension":"row","count":2}}]`,
 		"--yes",
 	})
 	input := decodeToolInput(t, body, "batch_update")
@@ -329,7 +329,7 @@ func TestBatchUpdate_ResizeNoOperationField(t *testing.T) {
 	t.Parallel()
 	body := parseDryRunBody(t, BatchUpdate, []string{
 		"--url", testURL,
-		"--operations", `[{"shortcut":"+rows-resize","input":{"sheet_id":"sh1","range":"1:3","resize_height":{"type":"pixel","value":30}}}]`,
+		"--operations", `[{"shortcut":"+rows-resize","input":{"sheet_id":"sh1","start":0,"end":2,"type":"pixel","size":30}}]`,
 		"--yes",
 	})
 	input := decodeToolInput(t, body, "batch_update")

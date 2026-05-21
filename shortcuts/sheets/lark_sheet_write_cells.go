@@ -86,7 +86,7 @@ var CellsSet = common.Shortcut{
 	},
 }
 
-func cellsSetInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) (map[string]interface{}, error) {
+func cellsSetInput(runtime flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
 	cells, err := requireJSONArray(runtime, "cells")
 	if err != nil {
 		return nil, err
@@ -168,7 +168,7 @@ var CellsSetStyle = common.Shortcut{
 	},
 }
 
-func cellsSetStyleInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) (map[string]interface{}, error) {
+func cellsSetStyleInput(runtime flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
 	rangeStr := strings.TrimSpace(runtime.Str("range"))
 	rows, cols, err := rangeDimensions(rangeStr)
 	if err != nil {
@@ -256,7 +256,7 @@ var CsvPut = common.Shortcut{
 	},
 }
 
-func csvPutInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
+func csvPutInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":   token,
 		"csv":        runtime.Str("csv"),
@@ -332,7 +332,7 @@ var DropdownSet = common.Shortcut{
 	},
 }
 
-func dropdownSetInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) (map[string]interface{}, error) {
+func dropdownSetInput(runtime flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
 	validation, err := buildDropdownValidation(runtime)
 	if err != nil {
 		return nil, err
@@ -361,7 +361,7 @@ func dropdownSetInput(runtime *common.RuntimeContext, token, sheetID, sheetName 
 
 // buildDropdownValidation packs --options / --colors / --multiple / --highlight
 // into the data_validation block expected by set_cell_range.
-func buildDropdownValidation(runtime *common.RuntimeContext) (map[string]interface{}, error) {
+func buildDropdownValidation(runtime flagView) (map[string]interface{}, error) {
 	options, err := requireJSONArray(runtime, "options")
 	if err != nil {
 		return nil, err

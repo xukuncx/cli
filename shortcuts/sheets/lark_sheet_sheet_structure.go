@@ -148,7 +148,7 @@ var DimInsert = common.Shortcut{
 	},
 }
 
-func dimInsertInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
+func dimInsertInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
 	dim := runtime.Str("dimension")
 	start := runtime.Int("start")
 	end := runtime.Int("end")
@@ -273,7 +273,7 @@ var DimFreeze = common.Shortcut{
 	},
 }
 
-func dimFreezeInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
+func dimFreezeInput(runtime flagView, token, sheetID, sheetName string) map[string]interface{} {
 	dim := runtime.Str("dimension")
 	count := runtime.Int("count")
 	op := "freeze"
@@ -320,7 +320,7 @@ func validateDimRange(ctx context.Context, runtime *common.RuntimeContext) error
 
 // dimRangeOpInput builds the tool input for delete/hide/unhide which all
 // take a `range` field. dimRange handles 0-based exclusive → 1-based inclusive.
-func dimRangeOpInput(runtime *common.RuntimeContext, token, sheetID, sheetName, op string) map[string]interface{} {
+func dimRangeOpInput(runtime flagView, token, sheetID, sheetName, op string) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id":  token,
 		"operation": op,
@@ -405,7 +405,7 @@ func newDimGroupShortcut(command, desc, op string) common.Shortcut {
 	}
 }
 
-func dimGroupInput(runtime *common.RuntimeContext, token, sheetID, sheetName, op string) map[string]interface{} {
+func dimGroupInput(runtime flagView, token, sheetID, sheetName, op string) map[string]interface{} {
 	input := dimRangeOpInput(runtime, token, sheetID, sheetName, op)
 	if op == "group" {
 		if gs := runtime.Str("group-state"); gs != "" {
@@ -431,6 +431,17 @@ func dimRange(dimension string, start, end int) string {
 	}
 	if start == end-1 {
 		return fmt.Sprintf("%d", start+1)
+	}
+	return fmt.Sprintf("%d:%d", start+1, end)
+}
+
+// dimRangeFull is like dimRange but never collapses a single-element range to
+// a bare index — it always emits the two-sided "N:N" / "C:C" form. resize_range
+// rejects a bare index ("23" → Invalid range), so single-row/column resizes
+// must keep both sides.
+func dimRangeFull(dimension string, start, end int) string {
+	if dimension == "column" {
+		return columnIndexToLetter(start) + ":" + columnIndexToLetter(end-1)
 	}
 	return fmt.Sprintf("%d:%d", start+1, end)
 }

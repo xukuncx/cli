@@ -4,6 +4,8 @@
 package sheets
 
 import (
+	"strings"
+
 	"github.com/larksuite/cli/shortcuts/common"
 )
 
@@ -11,123 +13,208 @@ import (
 //
 // 用户传给 +batch-update --operations 的形态是 CLI 视角的 {shortcut, input}：
 //
-//     [{"shortcut": "+dim-insert", "input": {...}}, ...]
+//     [{"shortcut": "+range-copy", "input": {"sheet_id":"...","source-range":"A1:B2","target-range":"A10"}}, ...]
 //
-// 而底层 MCP batch_update tool 的契约是 {tool_name, input} —— input 里某些
-// MCP tool 还需要 operation 字段区分动作（如 modify_sheet_structure
-// 的 insert / delete / hide / unhide / freeze / group / ungroup）。
+// input 里用的是该 shortcut 的 **CLI flag 名**（与 standalone 调用一致；连字符 /
+// 下划线两种写法都接受）。底层 MCP batch_update tool 要的是
+// {tool_name, input(MCP body)} —— body 的字段名往往与 CLI flag 名不同
+// （如 +range-copy 的 source-range/target-range 要翻成 range/destination_range）。
 //
-// translateBatchOp 做这层翻译：查表 shortcut → mcpToolName + 可选 operation，
-// 然后把 operation 注入 input.operation。dispatch 表只列**可纳入 atomic
-// batch 的 write shortcut**——读操作、fan-out wrapper（包括 +batch-update
-// 自身）、走 legacy v2 endpoint 的 shortcut（如 +dim-move）、需要多步副作用
-// 的 shortcut（如 +cells-set-image / +workbook-create）一律不放进表里，
+// 关键：每个子操作复用 **standalone shortcut 同一套 flag→body translator**
+// （那些 *Input 构建函数，现在统一接收 flagView 接口）。这样 batch 子操作
+// 产出的 MCP body 与该 shortcut 单独调用产出的 body 完全一致（由
+// batch-vs-standalone 契约测试保证）。dispatch 表只列**可纳入 atomic batch
+// 的 write shortcut**——读操作、fan-out wrapper（+batch-update 自身、
+// +cells-batch-set-style、+dropdown-{update,delete}）一律不放进表里，
 // 用户传到 +batch-update 里会被 translator 拒绝。
+
+// batchTranslateFn turns a sub-op's CLI-shape input (via flagView) into the MCP
+// tool body for the underlying batch_update sub-tool. token is the
+// +batch-update top-level spreadsheet token; sheetID/sheetName are the resolved
+// sheet selector for this sub-op. The returned body already carries excel_id
+// and (where the tool needs one) the operation discriminator — exactly as the
+// standalone shortcut would emit.
+type batchTranslateFn func(fv flagView, token, sheetID, sheetName string) (map[string]interface{}, error)
 
 type batchOpMapping struct {
 	// mcpToolName 是底层 MCP batch_update 接受的 tool_name。
 	mcpToolName string
-	// operationField 注入到 input.operation 的值；空 = 不注入（MCP tool 没有
-	// operation 字段，如 set_cell_range / clear_cell_range / replace_data /
-	// set_range_from_csv / resize_range）。
-	operationField string
+	// translate 复用 standalone 的 *Input 构建逻辑，产出 MCP body。
+	translate batchTranslateFn
 }
 
-// batchOpDispatch 全表 41 项，覆盖 sheet skill 下所有可 batch 的 write shortcut。
-// 增删请同步 canonical-spec/tool-schemas/cli-schemas.json 的 shortcut enum。
+// noErrTranslate adapts a builder that cannot fail into a batchTranslateFn.
+func noErrTranslate(f func(fv flagView, token, sheetID, sheetName string) map[string]interface{}) batchTranslateFn {
+	return func(fv flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
+		return f(fv, token, sheetID, sheetName), nil
+	}
+}
+
+// objCreateTranslate / objUpdateTranslate / objDeleteTranslate bind an object
+// CRUD spec to the shared object_crud builders.
+func objCreateTranslate(spec objectCRUDSpec) batchTranslateFn {
+	return func(fv flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
+		return objectCreateInput(fv, token, sheetID, sheetName, spec)
+	}
+}
+
+func objUpdateTranslate(spec objectCRUDSpec) batchTranslateFn {
+	return func(fv flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
+		return objectUpdateInput(fv, token, sheetID, sheetName, spec)
+	}
+}
+
+func objDeleteTranslate(spec objectCRUDSpec) batchTranslateFn {
+	return func(fv flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
+		return objectDeleteInput(fv, token, sheetID, sheetName, spec), nil
+	}
+}
+
+// batchOpDispatch covers every write shortcut that can join an atomic batch.
 var batchOpDispatch = map[string]batchOpMapping{
 	// ─── 单元格内容 ──────────────────────────────────────────────────
-	"+cells-set":       {mcpToolName: "set_cell_range"},
-	"+cells-set-style": {mcpToolName: "set_cell_range"},
-	"+cells-clear":     {mcpToolName: "clear_cell_range"},
-	"+cells-replace":   {mcpToolName: "replace_data"},
-	"+csv-put":         {mcpToolName: "set_range_from_csv"},
-	"+dropdown-set":    {mcpToolName: "set_cell_range"},
+	"+cells-set":       {"set_cell_range", cellsSetInput},
+	"+cells-set-style": {"set_cell_range", cellsSetStyleInput},
+	"+cells-clear":     {"clear_cell_range", noErrTranslate(cellsClearInput)},
+	"+cells-replace":   {"replace_data", noErrTranslate(replaceInput)},
+	"+csv-put":         {"set_range_from_csv", noErrTranslate(csvPutInput)},
+	"+dropdown-set":    {"set_cell_range", dropdownSetInput},
 
 	// ─── 单元格合并 (merge_cells, operation 区分) ────────────────────
-	"+cells-merge":   {mcpToolName: "merge_cells", operationField: "merge"},
-	"+cells-unmerge": {mcpToolName: "merge_cells", operationField: "unmerge"},
+	"+cells-merge": {"merge_cells", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return mergeInput(fv, token, sid, sname, "merge", true), nil
+	}},
+	"+cells-unmerge": {"merge_cells", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return mergeInput(fv, token, sid, sname, "unmerge", false), nil
+	}},
 
 	// ─── 行列结构 (modify_sheet_structure, operation 区分) ──────────
-	// 注意：+dim-move 不在此 — 单 shortcut 走 legacy v2 dimension_range
-	// endpoint，不经 MCP，无法 batch。
-	// +dim-freeze 静态注入 operation="freeze"，单 shortcut 里基于 count==0
-	// 切换 unfreeze 的路径在 batch 里不支持（用户要 unfreeze 用单 shortcut）。
-	"+dim-insert":  {mcpToolName: "modify_sheet_structure", operationField: "insert"},
-	"+dim-delete":  {mcpToolName: "modify_sheet_structure", operationField: "delete"},
-	"+dim-hide":    {mcpToolName: "modify_sheet_structure", operationField: "hide"},
-	"+dim-unhide":  {mcpToolName: "modify_sheet_structure", operationField: "unhide"},
-	"+dim-freeze":  {mcpToolName: "modify_sheet_structure", operationField: "freeze"},
-	"+dim-group":   {mcpToolName: "modify_sheet_structure", operationField: "group"},
-	"+dim-ungroup": {mcpToolName: "modify_sheet_structure", operationField: "ungroup"},
+	"+dim-insert": {"modify_sheet_structure", noErrTranslate(dimInsertInput)},
+	"+dim-delete": {"modify_sheet_structure", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return dimRangeOpInput(fv, token, sid, sname, "delete"), nil
+	}},
+	"+dim-hide": {"modify_sheet_structure", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return dimRangeOpInput(fv, token, sid, sname, "hide"), nil
+	}},
+	"+dim-unhide": {"modify_sheet_structure", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return dimRangeOpInput(fv, token, sid, sname, "unhide"), nil
+	}},
+	"+dim-freeze": {"modify_sheet_structure", noErrTranslate(dimFreezeInput)},
+	"+dim-group": {"modify_sheet_structure", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return dimGroupInput(fv, token, sid, sname, "group"), nil
+	}},
+	"+dim-ungroup": {"modify_sheet_structure", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return dimGroupInput(fv, token, sid, sname, "ungroup"), nil
+	}},
 
 	// ─── 行高列宽 (resize_range, 无 operation 字段) ─────────────────
-	// row/column 通过 input.resize_height vs input.resize_width 顶层 key 表达。
-	"+rows-resize": {mcpToolName: "resize_range"},
-	"+cols-resize": {mcpToolName: "resize_range"},
+	"+rows-resize": {"resize_range", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return resizeInput(fv, token, sid, sname, "row"), nil
+	}},
+	"+cols-resize": {"resize_range", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return resizeInput(fv, token, sid, sname, "column"), nil
+	}},
 
 	// ─── 区域操作 (transform_range, operation 区分) ─────────────────
-	"+range-move": {mcpToolName: "transform_range", operationField: "move"},
-	"+range-copy": {mcpToolName: "transform_range", operationField: "copy"},
-	"+range-fill": {mcpToolName: "transform_range", operationField: "fill"},
-	"+range-sort": {mcpToolName: "transform_range", operationField: "sort"},
+	"+range-move": {"transform_range", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return transformMoveCopyInput(fv, token, sid, sname, "move", false), nil
+	}},
+	"+range-copy": {"transform_range", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return transformMoveCopyInput(fv, token, sid, sname, "copy", true), nil
+	}},
+	"+range-fill": {"transform_range", noErrTranslate(rangeFillInput)},
+	"+range-sort": {"transform_range", rangeSortInput},
 
 	// ─── 工作簿 / 子表 (modify_workbook_structure, operation 区分) ──
-	"+sheet-create":        {mcpToolName: "modify_workbook_structure", operationField: "create"},
-	"+sheet-delete":        {mcpToolName: "modify_workbook_structure", operationField: "delete"},
-	"+sheet-rename":        {mcpToolName: "modify_workbook_structure", operationField: "rename"},
-	"+sheet-move":          {mcpToolName: "modify_workbook_structure", operationField: "move"},
-	"+sheet-copy":          {mcpToolName: "modify_workbook_structure", operationField: "copy"},
-	"+sheet-hide":          {mcpToolName: "modify_workbook_structure", operationField: "hide"},
-	"+sheet-unhide":        {mcpToolName: "modify_workbook_structure", operationField: "unhide"},
-	"+sheet-set-tab-color": {mcpToolName: "modify_workbook_structure", operationField: "set_tab_color"},
+	"+sheet-create": {"modify_workbook_structure", func(fv flagView, token, _, _ string) (map[string]interface{}, error) {
+		return sheetCreateInput(fv, token), nil
+	}},
+	"+sheet-delete": {"modify_workbook_structure", noErrTranslate(sheetDeleteInput)},
+	"+sheet-rename": {"modify_workbook_structure", noErrTranslate(sheetRenameInput)},
+	"+sheet-move":   {"modify_workbook_structure", sheetMoveBatchInput},
+	"+sheet-copy":   {"modify_workbook_structure", noErrTranslate(sheetCopyInput)},
+	"+sheet-hide": {"modify_workbook_structure", noErrTranslate(func(fv flagView, t, sid, sn string) map[string]interface{} {
+		return sheetVisibilityInput(fv, t, sid, sn, "hide")
+	})},
+	"+sheet-unhide": {"modify_workbook_structure", noErrTranslate(func(fv flagView, t, sid, sn string) map[string]interface{} {
+		return sheetVisibilityInput(fv, t, sid, sn, "unhide")
+	})},
+	"+sheet-set-tab-color": {"modify_workbook_structure", noErrTranslate(sheetSetTabColorInput)},
 
 	// ─── 对象族 CRUD (manage_*_object, operation 区分) ─────────────
-	"+chart-create": {mcpToolName: "manage_chart_object", operationField: "create"},
-	"+chart-update": {mcpToolName: "manage_chart_object", operationField: "update"},
-	"+chart-delete": {mcpToolName: "manage_chart_object", operationField: "delete"},
+	"+chart-create": {"manage_chart_object", objCreateTranslate(chartSpec)},
+	"+chart-update": {"manage_chart_object", objUpdateTranslate(chartSpec)},
+	"+chart-delete": {"manage_chart_object", objDeleteTranslate(chartSpec)},
 
-	"+pivot-create": {mcpToolName: "manage_pivot_table_object", operationField: "create"},
-	"+pivot-update": {mcpToolName: "manage_pivot_table_object", operationField: "update"},
-	"+pivot-delete": {mcpToolName: "manage_pivot_table_object", operationField: "delete"},
+	"+pivot-create": {"manage_pivot_table_object", objCreateTranslate(pivotSpec)},
+	"+pivot-update": {"manage_pivot_table_object", objUpdateTranslate(pivotSpec)},
+	"+pivot-delete": {"manage_pivot_table_object", objDeleteTranslate(pivotSpec)},
 
-	"+cond-format-create": {mcpToolName: "manage_conditional_format_object", operationField: "create"},
-	"+cond-format-update": {mcpToolName: "manage_conditional_format_object", operationField: "update"},
-	"+cond-format-delete": {mcpToolName: "manage_conditional_format_object", operationField: "delete"},
+	"+cond-format-create": {"manage_conditional_format_object", objCreateTranslate(condFormatSpec)},
+	"+cond-format-update": {"manage_conditional_format_object", objUpdateTranslate(condFormatSpec)},
+	"+cond-format-delete": {"manage_conditional_format_object", objDeleteTranslate(condFormatSpec)},
 
-	"+filter-create": {mcpToolName: "manage_filter_object", operationField: "create"},
-	"+filter-update": {mcpToolName: "manage_filter_object", operationField: "update"},
-	"+filter-delete": {mcpToolName: "manage_filter_object", operationField: "delete"},
+	"+filter-create": {"manage_filter_object", filterCreateInput},
+	"+filter-update": {"manage_filter_object", filterUpdateInput},
+	"+filter-delete": {"manage_filter_object", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		input := map[string]interface{}{"excel_id": token, "operation": "delete"}
+		sheetSelectorForToolInput(input, sid, sname)
+		return input, nil
+	}},
 
-	"+filter-view-create": {mcpToolName: "manage_filter_view_object", operationField: "create"},
-	"+filter-view-update": {mcpToolName: "manage_filter_view_object", operationField: "update"},
-	"+filter-view-delete": {mcpToolName: "manage_filter_view_object", operationField: "delete"},
+	"+filter-view-create": {"manage_filter_view_object", objCreateTranslate(filterViewSpec)},
+	"+filter-view-update": {"manage_filter_view_object", objUpdateTranslate(filterViewSpec)},
+	"+filter-view-delete": {"manage_filter_view_object", objDeleteTranslate(filterViewSpec)},
 
-	"+sparkline-create": {mcpToolName: "manage_sparkline_object", operationField: "create"},
-	"+sparkline-update": {mcpToolName: "manage_sparkline_object", operationField: "update"},
-	"+sparkline-delete": {mcpToolName: "manage_sparkline_object", operationField: "delete"},
+	"+sparkline-create": {"manage_sparkline_object", objCreateTranslate(sparklineSpec)},
+	"+sparkline-update": {"manage_sparkline_object", objUpdateTranslate(sparklineSpec)},
+	"+sparkline-delete": {"manage_sparkline_object", objDeleteTranslate(sparklineSpec)},
 
-	"+float-image-create": {mcpToolName: "manage_float_image_object", operationField: "create"},
-	"+float-image-update": {mcpToolName: "manage_float_image_object", operationField: "update"},
-	"+float-image-delete": {mcpToolName: "manage_float_image_object", operationField: "delete"},
+	"+float-image-create": {"manage_float_image_object", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return floatImageWriteInput(fv, token, sid, sname, "create", false)
+	}},
+	"+float-image-update": {"manage_float_image_object", func(fv flagView, token, sid, sname string) (map[string]interface{}, error) {
+		return floatImageWriteInput(fv, token, sid, sname, "update", true)
+	}},
+	"+float-image-delete": {"manage_float_image_object", objDeleteTranslate(floatImageDeleteSpec)},
 }
 
-// reservedSubOpKeys 是禁止用户在 sub-op input 里手填的 key —— 它们要么由
-// shortcut 名隐含（operation），要么由 +batch-update 顶层 --url/--token
-// 统一提供（excel_id / spreadsheet_token / url）。
+// sheetMoveBatchInput translates +sheet-move inside a batch. Unlike the
+// standalone shortcut it cannot issue the get_workbook_structure read that
+// auto-derives sheet_id / source_index, so both must be supplied explicitly.
+func sheetMoveBatchInput(fv flagView, token, sheetID, sheetName string) (map[string]interface{}, error) {
+	if sheetID == "" {
+		return nil, common.FlagErrorf("+sheet-move in +batch-update requires sheet_id (sheet_name needs a network lookup unavailable mid-batch)")
+	}
+	if !fv.Changed("source-index") {
+		return nil, common.FlagErrorf("+sheet-move in +batch-update requires source_index (auto-derive needs a network lookup unavailable mid-batch)")
+	}
+	return map[string]interface{}{
+		"excel_id":     token,
+		"operation":    "move",
+		"sheet_id":     sheetID,
+		"source_index": fv.Int("source-index"),
+		"target_index": fv.Int("index"),
+	}, nil
+}
+
+// reservedSubOpKeys 是禁止用户在 sub-op input 里手填的 key —— 它们由
+// +batch-update 顶层 --url/--token 统一提供（excel_id / spreadsheet_token / url）。
 var reservedSubOpKeys = []string{"excel_id", "spreadsheet_token", "url"}
 
 // translateBatchOp 把一个 CLI 视角的 {shortcut, input} 翻成底层 MCP
-// batch_update 的 {tool_name, input(+operation)}。`index` 用于错误信息定位。
+// batch_update 的 {tool_name, input}。`index` 用于错误信息定位。input 用
+// shortcut 的 CLI flag 名（连字符/下划线均可），经该 shortcut 的 standalone
+// translator 翻成 MCP body。
 //
 // 失败场景：
 //   - shortcut 字段缺失 / 非 string
-//   - shortcut 不在 dispatch 表（典型：拼写错；用户传了 read 操作；
-//     用户嵌套 +batch-update / +cells-batch-set-style 之类的 fan-out wrapper）
+//   - shortcut 不在 dispatch 表（拼写错；read 操作；嵌套 fan-out wrapper）
 //   - input 不是 object
 //   - input 里手填了 operation（由 shortcut 名隐含，禁手填以防 mismatch）
 //   - input 里手填了 excel_id / spreadsheet_token / url
-func translateBatchOp(raw interface{}, index int) (map[string]interface{}, error) {
+//   - 子操作的 translator 报错（如缺必填字段）
+func translateBatchOp(raw interface{}, token string, index int) (map[string]interface{}, error) {
 	op, ok := raw.(map[string]interface{})
 	if !ok {
 		return nil, common.FlagErrorf("operations[%d] must be a JSON object", index)
@@ -144,7 +231,7 @@ func translateBatchOp(raw interface{}, index int) (map[string]interface{}, error
 	if !ok {
 		return nil, common.FlagErrorf(
 			"operations[%d]: shortcut %q not allowed in +batch-update "+
-				"(read ops / fan-out wrappers like +batch-update / +cells-batch-set-style / +dropdown-{update,delete} / +dim-move are excluded; "+
+				"(read ops / fan-out wrappers like +batch-update / +cells-batch-set-style / +dropdown-{update,delete} are excluded; "+
 				"run `lark-cli sheets +batch-update --print-schema --flag-name operations` to see the full enum)",
 			index, sc,
 		)
@@ -181,36 +268,30 @@ func translateBatchOp(raw interface{}, index int) (map[string]interface{}, error
 			return nil, common.FlagErrorf("operations[%d] (%s): unknown top-level key %q (expected only 'shortcut' and 'input')", index, sc, k)
 		}
 	}
-	// 浅拷贝 input，注入 operation（如有），再补 excel_id 由调用方统一注入到顶层后，
-	// translator 也把 excel_id 写进 sub-op input（MCP tool 要求每个 sub-tool 都带）。
-	out := make(map[string]interface{}, len(input)+1)
-	for k, v := range input {
-		out[k] = v
-	}
-	if mapping.operationField != "" {
-		out["operation"] = mapping.operationField
+	fv := newMapFlagViewForCommand(sc, input)
+	sheetID := strings.TrimSpace(fv.Str("sheet-id"))
+	sheetName := strings.TrimSpace(fv.Str("sheet-name"))
+	body, err := mapping.translate(fv, token, sheetID, sheetName)
+	if err != nil {
+		return nil, common.FlagErrorf("operations[%d] (%s): %v", index, sc, err)
 	}
 	return map[string]interface{}{
 		"tool_name": mapping.mcpToolName,
-		"input":     out,
+		"input":     body,
 	}, nil
 }
 
 // translateBatchOperations 翻译整个 ops 数组；fail-fast，遇错立即返回。
-// 翻译后会把 excel_id 注入每个 sub-op 的 input（MCP 契约要求）。
 func translateBatchOperations(rawOps []interface{}, token string) ([]interface{}, error) {
 	if len(rawOps) == 0 {
 		return nil, common.FlagErrorf("--operations must be a non-empty JSON array")
 	}
 	out := make([]interface{}, 0, len(rawOps))
 	for i, raw := range rawOps {
-		translated, err := translateBatchOp(raw, i)
+		translated, err := translateBatchOp(raw, token, i)
 		if err != nil {
 			return nil, err
 		}
-		// MCP batch_update 每个 sub-tool 的 input 都需要 excel_id（与单调用一致）。
-		input := translated["input"].(map[string]interface{})
-		input["excel_id"] = token
 		out = append(out, translated)
 	}
 	return out, nil
