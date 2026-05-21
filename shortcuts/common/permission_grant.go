@@ -43,11 +43,13 @@ func AutoGrantCurrentUserDrivePermission(runtime *RuntimeContext, token, resourc
 func autoGrantCurrentUserDrivePermission(runtime *RuntimeContext, token, resourceType string) map[string]interface{} {
 	userOpenID := strings.TrimSpace(runtime.UserOpenId())
 	if userOpenID == "" {
-		return buildPermissionGrantResult(
+		result := buildPermissionGrantResult(
 			PermissionGrantSkipped,
 			"",
 			fmt.Sprintf("Resource was created with bot identity, but no current CLI user open_id is configured, so current user %s was not granted. You can retry later or continue using bot identity.", permissionGrantPermMessage()),
 		)
+		fmt.Fprintf(runtime.IO().ErrOut, "⚠ 资源已由应用身份创建，但未检测到用户身份，无法自动授权。请执行 lark-cli auth login 登录后重试，或手动为资源授权。\n")
+		return result
 	}
 
 	body := map[string]interface{}{
@@ -70,11 +72,13 @@ func autoGrantCurrentUserDrivePermission(runtime *RuntimeContext, token, resourc
 		body,
 	)
 	if err != nil {
-		return buildPermissionGrantResult(
+		result := buildPermissionGrantResult(
 			PermissionGrantFailed,
 			userOpenID,
 			fmt.Sprintf("Resource was created, but granting current user %s failed: %s. You can retry later or continue using bot identity.", permissionGrantPermMessage(), compactPermissionGrantError(err)),
 		)
+		fmt.Fprintf(runtime.IO().ErrOut, "⚠ 资源已创建，但自动授权失败：%s。您可以稍后重试或手动为资源授权。\n", compactPermissionGrantError(err))
+		return result
 	}
 
 	return buildPermissionGrantResult(
