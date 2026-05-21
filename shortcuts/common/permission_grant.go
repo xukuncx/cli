@@ -98,6 +98,11 @@ func buildPermissionGrantResult(status, userOpenID, message string) map[string]i
 		result["user_open_id"] = userOpenID
 		result["member_type"] = "openid"
 	}
+	if status == PermissionGrantSkipped {
+		result["hint"] = "Run `lark-cli auth login` and retry, or grant permission manually via the Lark document UI."
+	} else if status == PermissionGrantFailed {
+		result["hint"] = "Retry later or grant permission manually via the Lark document UI."
+	}
 	return result
 }
 
