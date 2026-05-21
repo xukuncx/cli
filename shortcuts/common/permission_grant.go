@@ -48,7 +48,7 @@ func autoGrantCurrentUserDrivePermission(runtime *RuntimeContext, token, resourc
 			"",
 			fmt.Sprintf("Resource was created with bot identity, but no current CLI user open_id is configured, so current user %s was not granted. You can retry later or continue using bot identity.", permissionGrantPermMessage()),
 		)
-		fmt.Fprintf(runtime.IO().ErrOut, "⚠ 资源已由应用身份创建，但未检测到用户身份，无法自动授权。请执行 lark-cli auth login 登录后重试，或手动为资源授权。\n")
+		fmt.Fprintf(runtime.IO().ErrOut, "Warning: resource was created with bot identity, but no current user open_id is configured, so auto-grant was skipped. Run `lark-cli auth login` and retry, or grant permission manually.\n")
 		return result
 	}
 
@@ -77,7 +77,7 @@ func autoGrantCurrentUserDrivePermission(runtime *RuntimeContext, token, resourc
 			userOpenID,
 			fmt.Sprintf("Resource was created, but granting current user %s failed: %s. You can retry later or continue using bot identity.", permissionGrantPermMessage(), compactPermissionGrantError(err)),
 		)
-		fmt.Fprintf(runtime.IO().ErrOut, "⚠ 资源已创建，但自动授权失败：%s。您可以稍后重试或手动为资源授权。\n", compactPermissionGrantError(err))
+		fmt.Fprintf(runtime.IO().ErrOut, "Warning: resource was created, but auto-grant failed: %s. Retry later or grant permission manually.\n", compactPermissionGrantError(err))
 		return result
 	}
 
