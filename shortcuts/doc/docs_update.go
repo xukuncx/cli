@@ -36,18 +36,14 @@ var needsSelectionV1 = map[string]bool{
 func v1UpdateFlags() []common.Flag {
 	return []common.Flag{
 		{Name: "mode", Desc: "update mode: append | overwrite | replace_range | replace_all | insert_before | insert_after | delete_range", Hidden: true},
-		{Name: "markdown", Desc: "Markdown content (v1: Lark-flavored; v2: shorthand for --content <value> --doc-format markdown)", Hidden: true, Input: []string{common.File, common.Stdin}},
+		{Name: "markdown", Desc: "new content (Lark-flavored Markdown; create blank whiteboards with <whiteboard type=\"blank\"></whiteboard>, repeat to create multiple boards)", Hidden: true, Input: []string{common.File, common.Stdin}},
 		{Name: "selection-with-ellipsis", Desc: "content locator (e.g. 'start...end')", Hidden: true},
 		{Name: "selection-by-title", Desc: "title locator (e.g. '## Section')", Hidden: true},
 		{Name: "new-title", Desc: "also update document title", Hidden: true},
 	}
 }
 
-var docsUpdateFlagVersions = func() map[string]string {
-	m := buildFlagVersionMap(v1UpdateFlags(), v2UpdateFlags())
-	delete(m, "markdown") // shared between v1 and v2
-	return m
-}()
+var docsUpdateFlagVersions = buildFlagVersionMap(v1UpdateFlags(), v2UpdateFlags())
 
 // useV2Update returns true when the v2 (OpenAPI) update path should be used.
 // Explicit --api-version v2 takes priority; otherwise auto-detect by v2-only flags.
