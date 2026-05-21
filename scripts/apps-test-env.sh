@@ -72,10 +72,14 @@ if [ -z "$APPID" ] || [ -z "$USERID" ]; then
 fi
 echo "    appId=$APPID  userOpenId=$USERID"
 
-# ---- (3) inject miaoda:app:* scopes into stored UAT ----
-echo "[3/3] injecting miaoda:app:* scopes into stored UAT"
+# ---- (3) inject spark:* scopes into stored UAT ----
+# 跟生产代码（shortcuts/apps/*.go 里的 Scopes 字段）保持一致：BOE 后端目前在
+# spark 命名空间下注册了 apps 域的所有 OAPI（详见 common.go:10 注释）。
+# 待 miaoda 命名空间注册稳定后这里和 *.go 一起切回 miaoda:app:* 即可。
+echo "[3/3] injecting spark:app:* scopes into stored UAT"
 go run ./cmd/_apps_dev_tools/inject_scopes "$APPID" "$USERID" \
-  miaoda:app:write miaoda:app:readonly miaoda:app:deploy
+  spark:app:write spark:app:read spark:app:publish \
+  spark:app.access_scope:read spark:app.access_scope:write
 
 cat <<EOF
 

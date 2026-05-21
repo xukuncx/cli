@@ -63,7 +63,10 @@ class H(http.server.BaseHTTPRequestHandler):
         print(f'[mock {MODE}] {method} {parsed.path}  query={dict(parse_qs(parsed.query))}  body_bytes={len(body)}  -> action={action}', file=sys.stderr)
         if action == 'publish' or VERBOSE:
             auth = self.headers.get('Authorization', '<missing>')
-            print(f'[mock]   Authorization: {auth[:40]}...', file=sys.stderr)
+            # 不打印 token 片段 —— 即便是 mock，日志被 redirect 出去就成泄漏。
+            # 只打印 scheme（Bearer / Basic / ...），让调用方知道 header 存在与否。
+            scheme = auth.split(None, 1)[0] if auth and auth != '<missing>' else '<missing>'
+            print(f'[mock]   Authorization: {scheme} <redacted>', file=sys.stderr)
             ct = self.headers.get('Content-Type', '')
             if 'multipart' in ct:
                 boundary = ct.split('boundary=')[-1]
