@@ -21,14 +21,14 @@ func TestReadDataShortcuts_DryRun(t *testing.T) {
 		wantInput map[string]interface{}
 	}{
 		{
-			name:     "+cells-get multi-range + include=style,formula",
+			name:     "+cells-get single range + include=style,formula",
 			sc:       CellsGet,
-			args:     []string{"--url", testURL, "--sheet-id", testSheetID, "--range", "A1:B2", "--range", "D1:E5", "--include", "style,formula"},
+			args:     []string{"--url", testURL, "--sheet-id", testSheetID, "--range", "A1:B2", "--include", "style,formula"},
 			toolName: "get_cell_ranges",
 			wantInput: map[string]interface{}{
 				"excel_id":            testToken,
 				"sheet_id":            testSheetID,
-				"ranges":              []interface{}{"A1:B2", "D1:E5"},
+				"ranges":              []interface{}{"A1:B2"},
 				"include_styles":      true,
 				"value_render_option": "formula",
 			},
@@ -79,6 +79,35 @@ func TestDropdownGet_RequiresSheetPrefix(t *testing.T) {
 	}
 	if !strings.Contains(stdout+stderr+err.Error(), "must include a sheet prefix") {
 		t.Errorf("expected sheet-prefix guard; got=%s|%s|%v", stdout, stderr, err)
+	}
+}
+
+// TestReadData_RequiresRange covers the trim-based --range guard on the
+// single-range readers (--range "" slips past cobra's MarkFlagRequired but
+// must still be rejected by Validate).
+func TestReadData_RequiresRange(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		sc   common.Shortcut
+	}{
+		{"+cells-get", CellsGet},
+		{"+csv-get", CsvGet},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			stdout, stderr, err := runShortcutCapturingErr(t, c.sc, []string{
+				"--url", testURL, "--sheet-id", testSheetID, "--range", "  ", "--dry-run",
+			})
+			if err == nil {
+				t.Fatalf("expected validation error; stdout=%s stderr=%s", stdout, stderr)
+			}
+			if !strings.Contains(stdout+stderr+err.Error(), "--range is required") {
+				t.Errorf("expected --range guard; got=%s|%s|%v", stdout, stderr, err)
+			}
+		})
 	}
 }
 

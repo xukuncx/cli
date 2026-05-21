@@ -88,7 +88,7 @@ _公共四件套 · 系统：`--dry-run`_
 
 | Flag | Type | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `--range` | string_array | required | A1 范围，如 `Sheet1!A1:F10` |
+| `--range` | string | required | A1 范围，如 `Sheet1!A1:F10` |
 | `--include` | string_slice | optional | 要返回的信息类别，逗号分隔多个（可选值：`value` / `formula` / `style` / `comment` / `data_validation`） |
 | `--cell-limit` | int | optional | 防爆，默认 5000 |
 | `--max-chars` | int | optional | 防爆，默认 200000 |
@@ -108,7 +108,7 @@ _公共四件套 · 系统：`--dry-run`_
 
 | Flag | Type | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `--range` | string | optional | A1 范围；省略时读整表的 `current_region` |
+| `--range` | string | required | A1 范围，如 `Sheet1!A1:F30` |
 | `--value-render-option` | string | optional | 单元格取值模式（可选值：`formatted_value` / `raw_value` / `formula`） |
 | `--max-rows` | int | optional | 防爆，默认 100000 |
 | `--max-chars` | int | optional | 防爆，默认 200000 |

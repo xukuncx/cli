@@ -37,7 +37,7 @@ var CellsGet = common.Shortcut{
 		if _, _, err := resolveSheetSelector(runtime); err != nil {
 			return err
 		}
-		if len(runtime.StrArray("range")) == 0 {
+		if strings.TrimSpace(runtime.Str("range")) == "" {
 			return common.FlagErrorf("--range is required")
 		}
 		return nil
@@ -68,7 +68,7 @@ var CellsGet = common.Shortcut{
 func cellsGetInput(runtime *common.RuntimeContext, token, sheetID, sheetName string) map[string]interface{} {
 	input := map[string]interface{}{
 		"excel_id": token,
-		"ranges":   runtime.StrArray("range"),
+		"ranges":   []string{strings.TrimSpace(runtime.Str("range"))},
 	}
 	sheetSelectorForToolInput(input, sheetID, sheetName)
 	applyIncludeToCellsGet(input, runtime.StrSlice("include"))
@@ -126,8 +126,13 @@ var CsvGet = common.Shortcut{
 		if _, err := resolveSpreadsheetToken(runtime); err != nil {
 			return err
 		}
-		_, _, err := resolveSheetSelector(runtime)
-		return err
+		if _, _, err := resolveSheetSelector(runtime); err != nil {
+			return err
+		}
+		if strings.TrimSpace(runtime.Str("range")) == "" {
+			return common.FlagErrorf("--range is required")
+		}
+		return nil
 	},
 	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
 		token, _ := resolveSpreadsheetToken(runtime)

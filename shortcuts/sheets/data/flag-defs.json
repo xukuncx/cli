@@ -1178,7 +1178,7 @@
       {
         "name": "range",
         "kind": "own",
-        "type": "string_array",
+        "type": "string",
         "required": "required",
         "desc": "A1 range, e.g. `Sheet1!A1:F10`"
       },
@@ -1298,8 +1298,8 @@
         "name": "range",
         "kind": "own",
         "type": "string",
-        "required": "optional",
-        "desc": "A1 range; reads the whole sheet's `current_region` when omitted"
+        "required": "required",
+        "desc": "A1 range, e.g. `Sheet1!A1:F30`"
       },
       {
         "name": "value-render-option",

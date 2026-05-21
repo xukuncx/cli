@@ -127,22 +127,6 @@ lark-cli sheets +batch-update --url "https://example.feishu.cn/sheets/shtXXX" --
 # ]
 ```
 
-> **子操作 `input` 用该 shortcut 的 CLI flag 名**（连字符 / 下划线均可），与单独调用完全一致；CLI 会用同一套翻译逻辑生成底层 tool body。不要传底层 MCP 字段名。例如：
-> - `+range-copy` / `+range-move` 用 `source-range` / `target-range`（不是 `range` / `destination_range`）
-> - `+rows-resize` / `+cols-resize` 用 `start` / `end` / `type` / `size`（不是 `range` / `resize_height`）
-> - `+dim-{insert|delete|hide|unhide|group|ungroup}` 用 `dimension` / `start` / `end`
->
-> ```jsonc
-> // 复制 A1:B2 到 A10，并把第 23 行行高设为 40px
-> [
->   {"shortcut": "+range-copy",
->    "input": {"sheet_id": "...", "source-range": "A1:B2", "target-range": "A10", "paste-type": "all"}},
->   {"shortcut": "+rows-resize",
->    "input": {"sheet_id": "...", "start": 22, "end": 22, "type": "pixel", "size": 40}}
-> ]
-> ```
-> 注：`+sheet-move` 在批量内需显式提供 `sheet-id` 与 `source-index`（批量中途无法发起结构查询自动推导）。
-
 > **常见组合：插列 + 写表头 + 整列回填**——一次原子提交，不要拆成 N 次独立调用。批量回填同一列 **只需一次** `+cells-set`（range 写整列范围、cells 写 N×1 矩阵），不需要逐行循环。
 >
 > ```jsonc
