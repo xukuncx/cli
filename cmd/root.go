@@ -363,34 +363,6 @@ func availableSubcommandNames(cmd *cobra.Command) []string {
 	return subs
 }
 
-// logSecurityPolicyError logs a security policy error using tracking.LogAuthError.
-func logSecurityPolicyError(spErr *internalauth.SecurityPolicyError) {
-	codeStr := securityPolicyCodeString(spErr.Code)
-	errMsg := fmt.Sprintf("reason=security_policy code=%s message=%q", codeStr, spErr.Message)
-	tracking.LogAuthError("auth", "security_policy", fmt.Errorf(errMsg))
-}
-
-// logRawAuthFailure logs auth-related failures for Raw errors (e.g. from `api` command).
-// This preserves the original API error detail while still logging auth failures.
-func logRawAuthFailure(exitErr *output.ExitError) {
-	if exitErr.Detail == nil {
-		return
-	}
-
-	// Handle permission errors
-	if exitErr.Detail.Type == "permission" {
-		errMsg := fmt.Sprintf("reason=permission_denied code=%d message=%q", exitErr.Detail.Code, exitErr.Detail.Message)
-		tracking.LogAuthError("auth", "permission_denied", fmt.Errorf(errMsg))
-		return
-	}
-
-	// Handle auth errors
-	if exitErr.Detail.Type == "auth" {
-		errMsg := fmt.Sprintf("reason=auth_error message=%q", exitErr.Detail.Message)
-		tracking.LogAuthError("auth", "auth_error", fmt.Errorf(errMsg))
-	}
-}
-
 // installTipsHelpFunc wraps the default help function to append a TIPS section
 // when a command has tips set via cmdutil.SetTips. It also force-shows global
 // flags that are normally hidden in single-app mode (currently --profile)

@@ -49,6 +49,32 @@ func enrichMissingScopeError(f *cmdutil.Factory, exitErr *output.ExitError) {
 	exitErr.Detail.Hint += "\n" + scopeHint
 }
 
+// logSecurityPolicyError logs a security policy error using tracking.LogAuthError.
+func logSecurityPolicyError(spErr *internalauth.SecurityPolicyError) {
+	codeStr := securityPolicyCodeString(spErr.Code)
+	errMsg := fmt.Sprintf("reason=security_policy code=%s message=%q", codeStr, spErr.Message)
+	tracking.LogAuthError("auth", "security_policy", fmt.Errorf(errMsg))
+}
+
+// logRawAuthFailure logs auth-related failures for Raw errors (e.g. from `api` command).
+// This preserves the original API error detail while still logging auth failures.
+func logRawAuthFailure(exitErr *output.ExitError) {
+	if exitErr.Detail == nil {
+		return
+	}
+
+	if exitErr.Detail.Type == "permission" {
+		errMsg := fmt.Sprintf("reason=permission_denied code=%d message=%q", exitErr.Detail.Code, exitErr.Detail.Message)
+		tracking.LogAuthError("auth", "permission_denied", fmt.Errorf(errMsg))
+		return
+	}
+
+	if exitErr.Detail.Type == "auth" {
+		errMsg := fmt.Sprintf("reason=auth_error message=%q", exitErr.Detail.Message)
+		tracking.LogAuthError("auth", "auth_error", fmt.Errorf(errMsg))
+	}
+}
+
 // logAuthFailureReason extracts authorization-related errors from exitErr and logs
 // the failure reason using tracking.LogAuthError.
 func logAuthFailureReason(exitErr *output.ExitError) {
