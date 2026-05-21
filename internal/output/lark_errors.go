@@ -56,6 +56,19 @@ const (
 
 	// IM resource ownership mismatch.
 	LarkErrOwnershipMismatch = 231205
+
+	// Mail send: account / mailbox-level failures returned by
+	// POST /open-apis/mail/v1/user_mailboxes/:user_mailbox_id/drafts/:draft_id/send.
+	// Mail v1 uses service-scoped 123xxxx codes; keep the full upstream code
+	// because ErrAPI preserves Detail.Code exactly as returned by the server.
+	// These codes indicate the entire batch will keep failing identically and
+	// are consumed by shortcuts/mail.isFatalSendErr to abort early.
+	LarkErrMailboxNotFound        = 1234013 // mailbox not found or not active
+	LarkErrMailSendQuotaUser      = 1236007 // user daily send count exceeded
+	LarkErrMailSendQuotaUserExt   = 1236008 // user daily external recipient count exceeded
+	LarkErrMailSendQuotaTenantExt = 1236009 // tenant daily external recipient count exceeded
+	LarkErrMailQuota              = 1236010 // mail quota limit
+	LarkErrTenantStorageLimit     = 1236013 // tenant storage limit exceeded
 )
 
 // ClassifyLarkError maps a Lark API error code + message to (exitCode, errType, hint).
