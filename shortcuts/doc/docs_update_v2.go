@@ -39,6 +39,18 @@ func validCommandsV2Keys() []string {
 }
 
 func validateUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
+	// Resolve --markdown shorthand for v2 path.
+	if md := runtime.Str("markdown"); md != "" {
+		if runtime.Str("content") != "" {
+			return common.FlagErrorf("--markdown and --content are mutually exclusive")
+		}
+		if runtime.Changed("doc-format") && runtime.Str("doc-format") != "markdown" {
+			return common.FlagErrorf("--markdown implies --doc-format markdown, but --doc-format %q was specified", runtime.Str("doc-format"))
+		}
+		runtime.Cmd.Flags().Set("content", md)
+		runtime.Cmd.Flags().Set("doc-format", "markdown")
+	}
+
 	if _, err := parseDocumentRef(runtime.Str("doc")); err != nil {
 		return common.FlagErrorf("invalid --doc: %v", err)
 	}
@@ -121,6 +133,11 @@ func dryRunUpdateV2(_ context.Context, runtime *common.RuntimeContext) *common.D
 func executeUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 	ref, _ := parseDocumentRef(runtime.Str("doc"))
 
+	// Pre-execution warning: format mismatch detection.
+	if w := checkDocsFormatMismatch(runtime.Str("doc-format"), runtime.Str("content")); w != "" {
+		fmt.Fprintf(runtime.IO().ErrOut, "warning: %s\n", w)
+	}
+
 	apiPath := fmt.Sprintf("/open-apis/docs_ai/v1/documents/%s", ref.Token)
 	body := buildUpdateBody(runtime)
 
@@ -129,8 +146,39 @@ func executeUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 		return err
 	}
 
+	// Post-execution: check server response for silent failures.
+	warnDocsUpdateV2Response(runtime, data)
+
 	runtime.OutRaw(data, nil)
 	return nil
+}
+
+// warnDocsUpdateV2Response inspects the server response for update operations
+// and emits warnings when the result indicates a silent failure — e.g. the
+// server reported "success" but updated zero blocks, which typically means the
+// content format did not match --doc-format.
+func warnDocsUpdateV2Response(runtime *common.RuntimeContext, data map[string]interface{}) {
+	result := common.GetString(data, "result")
+	updatedCount := common.GetInt(data, "updated_blocks_count")
+
+	switch result {
+	case "failed":
+		fmt.Fprintf(runtime.IO().ErrOut,
+			"warning: server reported result=%q — the update failed entirely. "+
+				"Check that --doc-format matches your content format.\n", result)
+	case "partial_success":
+		fmt.Fprintf(runtime.IO().ErrOut,
+			"warning: server reported result=%q with updated_blocks_count=%d — "+
+				"some blocks were not updated.\n", result, updatedCount)
+	case "success":
+		if updatedCount == 0 {
+			fmt.Fprintf(runtime.IO().ErrOut,
+				"warning: server reported result=%q but updated_blocks_count=0 — "+
+					"no blocks were updated. This usually means --doc-format does not "+
+					"match the content format (e.g. Markdown content sent as XML). "+
+					"Try adding --doc-format markdown.\n", result)
+		}
+	}
 }
 
 func buildUpdateBody(runtime *common.RuntimeContext) map[string]interface{} {
