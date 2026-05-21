@@ -133,11 +133,6 @@ func dryRunUpdateV2(_ context.Context, runtime *common.RuntimeContext) *common.D
 func executeUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 	ref, _ := parseDocumentRef(runtime.Str("doc"))
 
-	// Pre-execution warning: format mismatch detection.
-	if w := checkDocsFormatMismatch(runtime.Str("doc-format"), runtime.Str("content")); w != "" {
-		fmt.Fprintf(runtime.IO().ErrOut, "warning: %s\n", w)
-	}
-
 	apiPath := fmt.Sprintf("/open-apis/docs_ai/v1/documents/%s", ref.Token)
 	body := buildUpdateBody(runtime)
 
