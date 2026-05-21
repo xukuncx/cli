@@ -154,12 +154,15 @@ func TestLogAuthResponse_HandlesNilSDKResponse(t *testing.T) {
 
 func TestLogAuthError_RecordsStructuredEntry(t *testing.T) {
 	var buf bytes.Buffer
-	restore := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
+	restoreLocal := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
 		return time.Date(2026, 4, 2, 3, 4, 5, 0, time.UTC)
 	}, func() []string {
 		return []string{"lark-cli", "auth", "login", "--device-code", "secret"}
 	})
-	t.Cleanup(restore)
+	t.Cleanup(restoreLocal)
+
+	restoreRemote := tracking.SetAuthLogRemoteHooksForTest(nil, "", nil, false)
+	t.Cleanup(restoreRemote)
 
 	tracking.LogAuthError("keychain", "Set", fmt.Errorf("keychain Set error: %w", http.ErrUseLastResponse))
 
@@ -175,9 +178,6 @@ func TestLogAuthError_RecordsStructuredEntry(t *testing.T) {
 	}
 	if !strings.Contains(got, "error=\"keychain Set error: net/http: use last response\"") {
 		t.Fatalf("expected quoted error in log, got %q", got)
-	}
-	if !strings.Contains(got, "parent=") {
-		t.Fatalf("expected parent in log, got %q", got)
 	}
 	if !strings.Contains(got, "cmdline=lark-cli auth login ...") {
 		t.Fatalf("expected truncated cmdline in log, got %q", got)

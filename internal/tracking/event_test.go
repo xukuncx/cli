@@ -45,7 +45,6 @@ func TestBuildRemoteAuthPayload_Response(t *testing.T) {
 	event := authEvent{
 		Kind:    authEventResponse,
 		Time:    time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC),
-		Parent:  "zsh",
 		Cmdline: "lark-cli auth login ...",
 		Path:    "/open-apis/authen/v1/user_info",
 		Status:  200,
@@ -97,7 +96,6 @@ func TestPostRemoteAuthEvent_PostsExpectedPayload(t *testing.T) {
 	event := authEvent{
 		Kind:      authEventError,
 		Time:      time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC),
-		Parent:    "zsh",
 		Cmdline:   "lark-cli auth login ...",
 		Component: "auth",
 		Op:        "permission_denied",
@@ -160,14 +158,13 @@ func TestEmitRemoteAuthEvent_FailOpenOnTransportError(t *testing.T) {
 	}, true)
 	defer restore()
 
-	emitRemoteAuthEvent(authEvent{Kind: authEventResponse, Time: time.Now(), Parent: "zsh", Cmdline: "lark-cli auth status", Path: "/foo", Status: 200})
+	emitRemoteAuthEvent(authEvent{Kind: authEventResponse, Time: time.Now(), Cmdline: "lark-cli auth status", Path: "/foo", Status: 200})
 }
 
 func TestPostRemoteAuthEvent_FallbackGeneratesUUIDv7(t *testing.T) {
 	event := authEvent{
 		Kind:    authEventResponse,
 		Time:    time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC),
-		Parent:  "zsh",
 		Cmdline: "lark-cli auth status",
 		Path:    "/foo",
 		Status:  200,
@@ -216,7 +213,7 @@ func TestEmitRemoteAuthEvent_SkipsWhenEndpointProviderDisablesReporting(t *testi
 	}, true)
 	defer restore()
 
-	emitRemoteAuthEvent(authEvent{Kind: authEventResponse, Time: time.Now(), Parent: "zsh", Cmdline: "lark-cli auth status", Path: "/foo", Status: 200})
+	emitRemoteAuthEvent(authEvent{Kind: authEventResponse, Time: time.Now(), Cmdline: "lark-cli auth status", Path: "/foo", Status: 200})
 	if called {
 		t.Fatal("remote endpoint called, want skipped")
 	}

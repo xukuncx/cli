@@ -86,12 +86,15 @@ func TestVerifyUserToken(t *testing.T) {
 			)
 
 			var buf bytes.Buffer
-			restore := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
+			restoreLocal := tracking.SetAuthLogHooksForTest(log.New(&buf, "", 0), func() time.Time {
 				return time.Date(2026, 4, 2, 3, 4, 5, 0, time.UTC)
 			}, func() []string {
 				return []string{"lark-cli", "auth", "status"}
 			})
-			t.Cleanup(restore)
+			t.Cleanup(restoreLocal)
+
+			restoreRemote := tracking.SetAuthLogRemoteHooksForTest(nil, "", nil, false)
+			t.Cleanup(restoreRemote)
 
 			err := VerifyUserToken(context.Background(), sdk, "test-token")
 			if tt.wantErr {

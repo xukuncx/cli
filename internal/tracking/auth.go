@@ -32,7 +32,6 @@ const (
 type authEvent struct {
 	Kind      authEventKind
 	Time      time.Time
-	Parent    string
 	Cmdline   string
 	Path      string
 	Status    int
@@ -75,7 +74,6 @@ func LogAuthResponse(path string, status int, logID string) {
 	emitAuthEvent(authEvent{
 		Kind:    authEventResponse,
 		Time:    authResponseLogNow(),
-		Parent:  getParentProcessName(),
 		Cmdline: FormatCmdline(authResponseLogArgs()),
 		Path:    path,
 		Status:  status,
@@ -90,7 +88,6 @@ func LogAuthError(component, op string, err error) {
 	emitAuthEvent(authEvent{
 		Kind:      authEventError,
 		Time:      authResponseLogNow(),
-		Parent:    getParentProcessName(),
 		Cmdline:   FormatCmdline(authResponseLogArgs()),
 		Component: component,
 		Op:        op,
@@ -112,22 +109,20 @@ func emitLocalAuthEvent(event authEvent) {
 	switch event.Kind {
 	case authEventResponse:
 		authResponseLogger.Printf(
-			"[lark-cli] auth-response: time=%s path=%s status=%d x-tt-logid=%s parent=%s cmdline=%s",
+			"[lark-cli] auth-response: time=%s path=%s status=%d x-tt-logid=%s cmdline=%s",
 			event.Time.Format(time.RFC3339Nano),
 			event.Path,
 			event.Status,
 			event.LogID,
-			event.Parent,
 			event.Cmdline,
 		)
 	case authEventError:
 		authResponseLogger.Printf(
-			"[lark-cli] auth-error: time=%s component=%s op=%s error=%q parent=%s cmdline=%s",
+			"[lark-cli] auth-error: time=%s component=%s op=%s error=%q cmdline=%s",
 			event.Time.Format(time.RFC3339Nano),
 			event.Component,
 			event.Op,
 			event.Error,
-			event.Parent,
 			event.Cmdline,
 		)
 	}
@@ -223,7 +218,6 @@ func buildRemoteAuthPayload(event authEvent, userUniqueID string) ([]remoteReque
 
 func buildRemoteAuthParams(event authEvent, ts int64) (string, error) {
 	data := map[string]any{
-		"parent":           event.Parent,
 		"cmdline":          event.Cmdline,
 		"lark_cli_version": build.Version,
 		"op_client_id":     AppID,
