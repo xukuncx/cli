@@ -91,3 +91,64 @@ func TestSecurityPolicyErrorUnwrap(t *testing.T) {
 		t.Fatal("errors.Is(spe, orig) = false, want true")
 	}
 }
+
+// TestTypedErrors_UnwrapNilReceiver pins the nil-receiver guard on every typed
+// error's Unwrap. Without these, a typed-nil pointer stored in an error
+// interface would panic when the root dispatcher or any caller walks the
+// errors.Is / errors.Unwrap chain.
+//
+// The doc comments on these types claim "nil-receiver safe" but until this
+// test landed nothing actually pinned that claim — exactly the
+// behavioral-comment-without-test footgun caught in PR #984 review.
+func TestTypedErrors_UnwrapNilReceiver(t *testing.T) {
+	t.Helper()
+	checks := []struct {
+		name string
+		call func() error
+	}{
+		{"ValidationError", func() error { var e *ValidationError; return e.Unwrap() }},
+		{"AuthenticationError", func() error { var e *AuthenticationError; return e.Unwrap() }},
+		{"ConfigError", func() error { var e *ConfigError; return e.Unwrap() }},
+		{"NetworkError", func() error { var e *NetworkError; return e.Unwrap() }},
+		{"SecurityPolicyError", func() error { var e *SecurityPolicyError; return e.Unwrap() }},
+		{"InternalError", func() error { var e *InternalError; return e.Unwrap() }},
+	}
+	for _, c := range checks {
+		t.Run(c.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("(*%s)(nil).Unwrap() panicked: %v", c.name, r)
+				}
+			}()
+			if got := c.call(); got != nil {
+				t.Errorf("(*%s)(nil).Unwrap() = %v, want nil", c.name, got)
+			}
+		})
+	}
+}
+
+// TestTypedErrors_UnwrapPropagatesCause pins the positive Unwrap path so the
+// nil-safety guard above does not silently drop a real Cause on non-nil
+// receivers. Without this, a buggy refactor could change `return e.Cause` to
+// `return nil` and the test suite would still pass.
+func TestTypedErrors_UnwrapPropagatesCause(t *testing.T) {
+	cause := errors.New("upstream cause")
+	cases := []struct {
+		name string
+		err  interface{ Unwrap() error }
+	}{
+		{"ValidationError", &ValidationError{Cause: cause}},
+		{"AuthenticationError", &AuthenticationError{Cause: cause}},
+		{"ConfigError", &ConfigError{Cause: cause}},
+		{"NetworkError", &NetworkError{Cause: cause}},
+		{"SecurityPolicyError", &SecurityPolicyError{Cause: cause}},
+		{"InternalError", &InternalError{Cause: cause}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.err.Unwrap(); got != cause {
+				t.Errorf("(*%s).Unwrap() = %v, want %v", c.name, got, cause)
+			}
+		})
+	}
+}

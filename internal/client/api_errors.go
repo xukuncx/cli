@@ -11,6 +11,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/larksuite/cli/errs"
 	"github.com/larksuite/cli/internal/output"
 )
 
@@ -20,14 +21,29 @@ const rawAPIJSONHint = "The endpoint may have returned an empty or non-standard 
 // actionable API errors for raw `lark-cli api` calls. All other failures
 // remain network errors.
 //
+// Already-classified errors pass through unchanged: any *output.ExitError
+// (legacy envelope from output.ErrAuth / output.ErrAPI / output.ErrWithHint)
+// and any typed *errs.* error (carries an embedded Problem) keeps its own
+// category and exit code. This is what makes the wrap idempotent on the
+// auth/credential chain — resolveAccessToken returns output.ErrAuth for
+// missing tokens, and that classification must survive the SDK boundary.
+//
 // Deprecated: legacy *output.ExitError wire shape (api_error + rawAPIJSONHint
-// on JSON-decode, network otherwise). Preserved so SDK Do() callers keep
-// the original envelope until per-domain migration to typed errors. New
-// code should route through APIClient.CheckResponse (typed *errs.APIError)
-// or construct *errs.NetworkError / *errs.InternalError directly.
+// on JSON-decode, network otherwise) for the wrap-from-untyped branch.
+// Preserved so SDK Do() callers keep the original envelope until per-domain
+// migration to typed errors. New code should route through
+// APIClient.CheckResponse (typed *errs.APIError) or construct
+// *errs.NetworkError / *errs.InternalError directly.
 func WrapDoAPIError(err error) error {
 	if err == nil {
 		return nil
+	}
+	var existing *output.ExitError
+	if errors.As(err, &existing) {
+		return err
+	}
+	if _, ok := errs.ProblemOf(err); ok {
+		return err
 	}
 	if isJSONDecodeError(err, false) {
 		return output.ErrWithHint(output.ExitAPI, "api_error",

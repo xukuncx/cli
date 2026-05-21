@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/credential"
+	"github.com/larksuite/cli/internal/output"
 )
 
 // roundTripFunc is an adapter to use a function as http.RoundTripper.
@@ -426,9 +428,118 @@ func TestDoStream_IgnoresBaseHTTPClientTimeout(t *testing.T) {
 	}
 }
 
-// TestDoSDKRequest_TransportFailureWrapsAsNetwork pins that DoSDKRequest wraps
-// transport-layer failures at the APIClient boundary as *errs.NetworkError
-// (exit 4 / type=network). io.ErrUnexpectedEOF from a RoundTripper surfaces
-// through net/http as a *url.Error, which the wrap classifier recognises as a
-// transport error.
-// TestCallAPI_ParseJSONFailureWrapsAsTypedInternal verifies the defensive
+// failingTokenResolver always returns TokenUnavailableError, exercising the
+// auth/credential failure path through resolveAccessToken.
+type failingTokenResolver struct{}
+
+func (f *failingTokenResolver) ResolveToken(_ context.Context, spec credential.TokenSpec) (*credential.TokenResult, error) {
+	return nil, &credential.TokenUnavailableError{Source: "test", Type: spec.Type}
+}
+
+// TestDoSDKRequest_AuthFailurePreservesAuthCategory pins the end-to-end
+// invariant codex caught the day this PR landed: when resolveAccessToken
+// produces output.ErrAuth ("no access token available for <identity>"),
+// DoSDKRequest must surface it with the original auth classification —
+// not silently downgrade it to a network error via the SDK-failure wrap.
+//
+// Regression scenario: shortcut path
+// (shortcuts/common/runner.go DoAPI → DoSDKRequest) calling against a user
+// identity with no cached token. Pre-fix this surfaced as exit 4/type=network
+// and routed agents into "check your connection" instead of "log in".
+func TestDoSDKRequest_AuthFailurePreservesAuthCategory(t *testing.T) {
+	ac := &APIClient{
+		HTTP:       &http.Client{},
+		Credential: credential.NewCredentialProvider(nil, nil, &failingTokenResolver{}, nil),
+		Config:     &core.CliConfig{AppID: "test-app", AppSecret: "test-secret", Brand: core.BrandFeishu},
+	}
+
+	_, err := ac.DoSDKRequest(context.Background(), &larkcore.ApiReq{
+		HttpMethod: http.MethodGet,
+		ApiPath:    "/open-apis/contact/v3/users/me",
+	}, core.AsUser)
+
+	if err == nil {
+		t.Fatal("expected auth error, got nil")
+	}
+	var exitErr *output.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *output.ExitError, got %T", err)
+	}
+	if exitErr.Code != output.ExitAuth {
+		t.Fatalf("Code = %d, want %d (auth) — confirms ErrAuth was downgraded to network at SDK wrap", exitErr.Code, output.ExitAuth)
+	}
+	if exitErr.Detail == nil || exitErr.Detail.Type != "auth" {
+		t.Fatalf("Detail.Type = %v, want auth", exitErr.Detail)
+	}
+}
+
+// TestDoSDKRequest_TransportFailureWrapsAsNetwork pins that genuinely untyped
+// SDK transport errors get the network classification via WrapDoAPIError.
+// io.ErrUnexpectedEOF from a RoundTripper surfaces through net/http as a
+// *url.Error, which the wrap classifier recognises as a transport error.
+func TestDoSDKRequest_TransportFailureWrapsAsNetwork(t *testing.T) {
+	rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return nil, io.ErrUnexpectedEOF
+	})
+	ac, _ := newTestAPIClient(t, rt)
+
+	_, err := ac.DoSDKRequest(context.Background(), &larkcore.ApiReq{
+		HttpMethod: http.MethodGet,
+		ApiPath:    "/open-apis/contact/v3/users/me",
+	}, core.AsBot)
+
+	if err == nil {
+		t.Fatal("expected error from broken transport, got nil")
+	}
+	var exitErr *output.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *output.ExitError, got %T", err)
+	}
+	if exitErr.Code != output.ExitNetwork {
+		t.Fatalf("Code = %d, want %d (network)", exitErr.Code, output.ExitNetwork)
+	}
+	if exitErr.Detail == nil || exitErr.Detail.Type != "network" {
+		t.Fatalf("Detail.Type = %v, want network", exitErr.Detail)
+	}
+}
+
+// TestCallAPI_ParseJSONFailureWrapsAsAPI pins the legacy-envelope contract for
+// malformed JSON response bodies: WrapJSONResponseParseError emits api_error
+// (exit 1) with the rawAPIJSONHint, so the pagination / cmd/api / cmd/service
+// callers always see a JSON stderr envelope instead of a bare "Error: ..."
+// line. Stage-4 framework-boundary migration will flip this wrapper to typed
+// *errs.InternalError; until then this test pins the legacy shape so we do
+// not regress envelope coverage.
+func TestCallAPI_ParseJSONFailureWrapsAsAPI(t *testing.T) {
+	rt := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{ malformed`)),
+		}, nil
+	})
+	ac, _ := newTestAPIClient(t, rt)
+
+	_, err := ac.CallAPI(context.Background(), RawApiRequest{
+		Method: "GET",
+		URL:    "/open-apis/contact/v3/users/me",
+		As:     "bot",
+	})
+
+	if err == nil {
+		t.Fatal("expected JSON parse error, got nil")
+	}
+	var exitErr *output.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *output.ExitError, got %T", err)
+	}
+	if exitErr.Code != output.ExitAPI {
+		t.Fatalf("Code = %d, want %d (api)", exitErr.Code, output.ExitAPI)
+	}
+	if exitErr.Detail == nil || exitErr.Detail.Type != "api_error" {
+		t.Fatalf("Detail.Type = %v, want api_error", exitErr.Detail)
+	}
+	if exitErr.Detail.Hint != rawAPIJSONHint {
+		t.Errorf("Detail.Hint = %q, want rawAPIJSONHint", exitErr.Detail.Hint)
+	}
+}

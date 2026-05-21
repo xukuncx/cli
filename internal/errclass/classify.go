@@ -84,7 +84,7 @@ func BuildAPIError(resp map[string]any, cc ClassifyContext) error {
 	case errs.CategoryConfig:
 		return &errs.ConfigError{Problem: base}
 	case errs.CategoryPolicy:
-		return &errs.SecurityPolicyError{Problem: base}
+		return buildSecurityPolicyError(base, resp)
 	case errs.CategoryValidation:
 		return &errs.ValidationError{Problem: base}
 	case errs.CategoryNetwork:
@@ -96,6 +96,70 @@ func BuildAPIError(resp map[string]any, cc ClassifyContext) error {
 	default:
 		return &errs.APIError{Problem: base, Detail: resp}
 	}
+}
+
+// buildSecurityPolicyError extracts challenge_url and the canonical hint from
+// the OAPI/MCP response data block, so the typed SecurityPolicyError carries
+// the same browser-challenge information that internal/auth/transport.go
+// already surfaces at the HTTP layer.
+//
+// Data shapes accepted:
+//
+//	{"code": 21000, "msg": "...", "data": {"challenge_url": "...", "hint"|"cli_hint": "..."}}
+//	{"code": 21000, "error": {"data": {"challenge_url": "...", "hint": "..."}}}
+//
+// challenge_url is dropped (set to "") if it is not an https:// URL — same
+// validation policy as internal/auth/transport.go.isValidChallengeURL.
+// Hint preference is `data.hint` first, falling back to `data.cli_hint`
+// for legacy producers, matching the transport layer.
+func buildSecurityPolicyError(p errs.Problem, resp map[string]any) *errs.SecurityPolicyError {
+	dataMap, _ := resp["data"].(map[string]any)
+	if dataMap == nil {
+		if errBlock, ok := resp["error"].(map[string]any); ok {
+			dataMap, _ = errBlock["data"].(map[string]any)
+		}
+	}
+	if dataMap == nil {
+		return &errs.SecurityPolicyError{Problem: p}
+	}
+
+	challengeURL := strings.Trim(stringFromAny(dataMap["challenge_url"]), " `")
+	if challengeURL != "" && !isHTTPSURL(challengeURL) {
+		challengeURL = ""
+	}
+
+	hint := stringFromAny(dataMap["hint"])
+	if hint == "" {
+		hint = stringFromAny(dataMap["cli_hint"])
+	}
+	if hint != "" {
+		p.Hint = hint
+	}
+
+	return &errs.SecurityPolicyError{
+		Problem:      p,
+		ChallengeURL: challengeURL,
+	}
+}
+
+// isHTTPSURL is the local-to-errclass duplicate of internal/auth/transport.go's
+// isValidChallengeURL. Kept local to avoid coupling errclass to internal/auth;
+// the two will collapse when the auth transport adopts BuildAPIError in stage 4.
+func isHTTPSURL(rawURL string) bool {
+	if rawURL == "" {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return u.Scheme == "https"
+}
+
+// stringFromAny coerces a map value to string when it is a string, returning "" otherwise.
+func stringFromAny(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 func buildPermissionError(p errs.Problem, resp map[string]any, cc ClassifyContext) *errs.PermissionError {

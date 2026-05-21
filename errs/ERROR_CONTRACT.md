@@ -222,8 +222,14 @@ fields matter.
 `errs.WrapInternal(err)` lifts an untyped error to `*InternalError`.
 Already-typed errors pass through unchanged.
 
-At the SDK boundary use `client.WrapDoAPIError(err)` — it routes transport
-failures to `*NetworkError` and everything else to `*InternalError`.
+At the SDK boundary use `client.WrapDoAPIError(err)`. Today it preserves
+already-classified errors — both legacy `*output.ExitError` (e.g. the
+`output.ErrAuth` that `resolveAccessToken` returns for missing tokens) and
+typed `*errs.*` — and falls back to the legacy `*output.ExitError` envelope
+(JSON-decode → `api_error`, everything else → `network`) for stray
+untyped errors. The fallback flips to typed `*errs.NetworkError` /
+`*errs.InternalError` in the stage-4 framework-boundary migration listed
+below.
 
 ### Add a Subtype
 

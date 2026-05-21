@@ -102,12 +102,12 @@ func (c *APIClient) DoSDKRequest(ctx context.Context, req *larkcore.ApiReq, as c
 
 	token, err := c.resolveAccessToken(ctx, as)
 	if err != nil {
-		// WrapDoAPIError is idempotent: typed errors from the auth/credential
-		// chain (e.g. *errs.AuthenticationError for missing tokens) pass through
-		// unchanged, while any stray untyped error from deeper in the
-		// credential provider gets the standard transport-or-internal
-		// classification — so the root handler never sees a raw fmt.Errorf
-		// from this path.
+		// WrapDoAPIError is idempotent on already-classified errors:
+		// the *output.ExitError that resolveAccessToken returns for missing
+		// tokens (via output.ErrAuth) passes through with its auth category
+		// and exit 3 intact, and any future typed *errs.* error from the
+		// credential chain survives the same way. Only stray untyped errors
+		// (raw fmt.Errorf) get the transport-or-internal fallback.
 		return nil, WrapDoAPIError(err)
 	}
 	if as.IsBot() {
@@ -283,9 +283,12 @@ func (c *APIClient) DoAPI(ctx context.Context, request RawApiRequest) (*larkcore
 //
 // JSON parse failures are wrapped via WrapJSONResponseParseError so callers
 // (notably the pagination loop and --page-all paths in cmd/api / cmd/service)
-// always see a typed *errs.InternalError instead of a bare fmt.Errorf. Without
-// this, an empty or malformed page body would surface to the root handler as
-// a plain-text "Error: ..." line, bypassing the JSON stderr envelope contract.
+// see an *output.ExitError envelope (api_error for malformed JSON, network
+// for everything else) instead of a bare fmt.Errorf. Without this, an empty
+// or malformed page body would surface to the root handler as a plain-text
+// "Error: ..." line, bypassing the JSON stderr envelope contract. Stage-4
+// framework-boundary migration will flip this wrapper to typed
+// *errs.InternalError / *errs.NetworkError.
 func (c *APIClient) CallAPI(ctx context.Context, request RawApiRequest) (interface{}, error) {
 	resp, err := c.DoAPI(ctx, request)
 	if err != nil {

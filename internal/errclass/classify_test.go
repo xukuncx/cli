@@ -588,3 +588,160 @@ func TestBuildAPIError_JSONNumberCode(t *testing.T) {
 		t.Errorf("expected *errs.PermissionError, got %T", err)
 	}
 }
+
+// TestBuildAPIError_SecurityPolicyExtractsChallenge pins that policy responses
+// passing through BuildAPIError keep the browser-challenge URL and hint —
+// agents need challenge_url to drive the user through MFA / device-trust
+// flows. Without extraction, the typed envelope is degenerate vs. what the
+// internal/auth/transport.go HTTP-layer interceptor already produces.
+func TestBuildAPIError_SecurityPolicyExtractsChallenge(t *testing.T) {
+	resp := map[string]any{
+		"code": 21000,
+		"msg":  "challenge required",
+		"data": map[string]any{
+			"challenge_url": "https://passport.feishu.cn/challenge/xyz",
+			"hint":          "complete MFA in the browser, then retry",
+		},
+	}
+	err := errclass.BuildAPIError(resp, errclass.ClassifyContext{Brand: "feishu", AppID: "cli_test", Identity: "user"})
+	spe, ok := err.(*errs.SecurityPolicyError)
+	if !ok {
+		t.Fatalf("expected *SecurityPolicyError, got %T", err)
+	}
+	if spe.ChallengeURL != "https://passport.feishu.cn/challenge/xyz" {
+		t.Errorf("ChallengeURL = %q, want https://passport.feishu.cn/challenge/xyz", spe.ChallengeURL)
+	}
+	if spe.Hint != "complete MFA in the browser, then retry" {
+		t.Errorf("Hint = %q, want MFA hint", spe.Hint)
+	}
+}
+
+// TestBuildAPIError_SecurityPolicyHintFallsBackToCliHint pins that legacy
+// producers using data.cli_hint still surface via Hint when data.hint is absent.
+func TestBuildAPIError_SecurityPolicyHintFallsBackToCliHint(t *testing.T) {
+	resp := map[string]any{
+		"code": 21001,
+		"msg":  "access denied",
+		"data": map[string]any{
+			"cli_hint": "ask your admin for elevated approval",
+		},
+	}
+	err := errclass.BuildAPIError(resp, errclass.ClassifyContext{Brand: "feishu", AppID: "cli_test", Identity: "user"})
+	spe, ok := err.(*errs.SecurityPolicyError)
+	if !ok {
+		t.Fatalf("expected *SecurityPolicyError, got %T", err)
+	}
+	if spe.Hint != "ask your admin for elevated approval" {
+		t.Errorf("Hint = %q, want cli_hint fallback", spe.Hint)
+	}
+}
+
+// TestBuildAPIError_SecurityPolicyDropsNonHTTPSChallenge pins that an
+// untrusted challenge_url (non-https) is dropped — same policy as
+// internal/auth/transport.go isValidChallengeURL.
+func TestBuildAPIError_SecurityPolicyDropsNonHTTPSChallenge(t *testing.T) {
+	cases := []string{
+		"http://attacker.example.com/challenge",
+		"javascript:alert(1)",
+		"ftp://example.com/challenge",
+		"not a url at all",
+	}
+	for _, bad := range cases {
+		t.Run(bad, func(t *testing.T) {
+			resp := map[string]any{
+				"code": 21000,
+				"msg":  "challenge required",
+				"data": map[string]any{"challenge_url": bad, "hint": "h"},
+			}
+			err := errclass.BuildAPIError(resp, errclass.ClassifyContext{})
+			spe, ok := err.(*errs.SecurityPolicyError)
+			if !ok {
+				t.Fatalf("expected *SecurityPolicyError, got %T", err)
+			}
+			if spe.ChallengeURL != "" {
+				t.Errorf("ChallengeURL should be dropped for %q, got %q", bad, spe.ChallengeURL)
+			}
+		})
+	}
+}
+
+// TestBuildAPIError_SecurityPolicyNoData pins the no-data case — typed
+// envelope still routes correctly with empty extension fields when the
+// upstream response carries only code+msg.
+func TestBuildAPIError_SecurityPolicyNoData(t *testing.T) {
+	resp := map[string]any{"code": 21000, "msg": "challenge required"}
+	err := errclass.BuildAPIError(resp, errclass.ClassifyContext{})
+	spe, ok := err.(*errs.SecurityPolicyError)
+	if !ok {
+		t.Fatalf("expected *SecurityPolicyError, got %T", err)
+	}
+	if spe.ChallengeURL != "" {
+		t.Errorf("ChallengeURL should be empty without data; got %q", spe.ChallengeURL)
+	}
+	if spe.Message != "challenge required" {
+		t.Errorf("Message = %q, want challenge required", spe.Message)
+	}
+}
+
+// TestBuildAPIError_SecurityPolicyMalformedData pins that malformed `data`
+// blocks (wrong type, wrong shape, non-string fields) degrade gracefully —
+// extension fields stay empty, no panic. Server-side bugs or transitional
+// API shapes must never crash the CLI dispatcher.
+func TestBuildAPIError_SecurityPolicyMalformedData(t *testing.T) {
+	cases := []struct {
+		name string
+		resp map[string]any
+	}{
+		{"data is string not map", map[string]any{"code": 21000, "msg": "x", "data": "oops"}},
+		{"data is array not map", map[string]any{"code": 21000, "msg": "x", "data": []any{1, 2}}},
+		{"data is nil", map[string]any{"code": 21000, "msg": "x", "data": nil}},
+		{"challenge_url is int", map[string]any{"code": 21000, "msg": "x", "data": map[string]any{"challenge_url": 123}}},
+		{"challenge_url is nil", map[string]any{"code": 21000, "msg": "x", "data": map[string]any{"challenge_url": nil}}},
+		{"hint is array", map[string]any{"code": 21000, "msg": "x", "data": map[string]any{"hint": []any{"a"}}}},
+		{"error.data is wrong type", map[string]any{"code": 21000, "msg": "x", "error": map[string]any{"data": "oops"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("BuildAPIError panicked on malformed data: %v", r)
+				}
+			}()
+			err := errclass.BuildAPIError(tc.resp, errclass.ClassifyContext{})
+			spe, ok := err.(*errs.SecurityPolicyError)
+			if !ok {
+				t.Fatalf("expected *SecurityPolicyError even with malformed data, got %T", err)
+			}
+			if spe.ChallengeURL != "" {
+				t.Errorf("ChallengeURL should be empty for malformed data, got %q", spe.ChallengeURL)
+			}
+		})
+	}
+}
+
+// TestBuildAPIError_SecurityPolicyErrorDataShape pins extraction from the
+// {"error": {"data": {...}}} envelope variant used by some preformatted
+// producers (e.g. internal API forwarding the auth-transport output).
+func TestBuildAPIError_SecurityPolicyErrorDataShape(t *testing.T) {
+	resp := map[string]any{
+		"code": 21000,
+		"msg":  "challenge required",
+		"error": map[string]any{
+			"data": map[string]any{
+				"challenge_url": "https://passport.feishu.cn/c/abc",
+				"hint":          "wrapped variant",
+			},
+		},
+	}
+	err := errclass.BuildAPIError(resp, errclass.ClassifyContext{})
+	spe, ok := err.(*errs.SecurityPolicyError)
+	if !ok {
+		t.Fatalf("expected *SecurityPolicyError, got %T", err)
+	}
+	if spe.ChallengeURL != "https://passport.feishu.cn/c/abc" {
+		t.Errorf("ChallengeURL = %q, want https://passport.feishu.cn/c/abc", spe.ChallengeURL)
+	}
+	if spe.Hint != "wrapped variant" {
+		t.Errorf("Hint = %q, want wrapped variant", spe.Hint)
+	}
+}
