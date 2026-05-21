@@ -173,6 +173,12 @@ func warnDocsUpdateV2Response(runtime *common.RuntimeContext, data map[string]in
 					"match the content format (e.g. Markdown content sent as XML). "+
 					"Try adding --doc-format markdown.\n", result)
 		}
+	case "":
+		// No result field — older API version or unexpected response; skip.
+	default:
+		fmt.Fprintf(runtime.IO().ErrOut,
+			"warning: server reported unexpected result=%q with updated_blocks_count=%d\n",
+			result, updatedCount)
 	}
 }
 
