@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/larksuite/cli/internal/event"
 )
 
 const mailEventType = "mail.user_mailbox.event.message_received_v1"
+const mailEventUnsubscribeTimeout = 5 * time.Second
 
 // MailMessageReceivedOutput is the flat shape; `desc` tags drive the reflected schema.
 type MailMessageReceivedOutput struct {
@@ -45,10 +47,7 @@ func processMailMessageReceived(_ context.Context, _ event.APIClient, raw *event
 	if err := json.Unmarshal(raw.Payload, &envelope); err != nil {
 		return raw.Payload, nil //nolint:nilerr // passthrough on malformed payload
 	}
-	body := envelope.Event.Body
-	if len(body) > 140 {
-		body = body[:140]
-	}
+	body := truncateRunes(envelope.Event.Body, 140)
 	return json.Marshal(&MailMessageReceivedOutput{
 		Type:        envelope.Header.EventType,
 		EventID:     envelope.Header.EventID,
@@ -59,6 +58,14 @@ func processMailMessageReceived(_ context.Context, _ event.APIClient, raw *event
 		Subject:     envelope.Event.Subject,
 		BodyExcerpt: body,
 	})
+}
+
+func truncateRunes(s string, limit int) string {
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit])
 }
 
 // parseMailboxes reads comma-separated `mailbox` param, trims whitespace, drops empties,
@@ -98,9 +105,7 @@ func mailMessageReceivedPreConsume(ctx context.Context, rt event.APIClient, para
 			"/open-apis/mail/v1/user_mailboxes/"+url.PathEscape(mb)+"/event/subscribe",
 			map[string]interface{}{"event_type": 1}); err != nil {
 			for i := len(subscribed) - 1; i >= 0; i-- {
-				_, _ = rt.CallAPI(ctx, "POST",
-					"/open-apis/mail/v1/user_mailboxes/"+url.PathEscape(subscribed[i])+"/event/unsubscribe",
-					map[string]interface{}{"event_type": 1})
+				unsubscribeMailEvent(rt, subscribed[i])
 			}
 			return nil, fmt.Errorf("mail event subscribe failed for %s: %w "+
 				"(hint: ensure (1) you are logged in as user with required mail scopes, "+
@@ -112,10 +117,16 @@ func mailMessageReceivedPreConsume(ctx context.Context, rt event.APIClient, para
 	}
 	cleanup := func() {
 		for i := len(subscribed) - 1; i >= 0; i-- {
-			_, _ = rt.CallAPI(ctx, "POST",
-				"/open-apis/mail/v1/user_mailboxes/"+url.PathEscape(subscribed[i])+"/event/unsubscribe",
-				map[string]interface{}{"event_type": 1})
+			unsubscribeMailEvent(rt, subscribed[i])
 		}
 	}
 	return cleanup, nil
+}
+
+func unsubscribeMailEvent(rt event.APIClient, mailbox string) {
+	ctx, cancel := context.WithTimeout(context.Background(), mailEventUnsubscribeTimeout)
+	defer cancel()
+	_, _ = rt.CallAPI(ctx, "POST",
+		"/open-apis/mail/v1/user_mailboxes/"+url.PathEscape(mailbox)+"/event/unsubscribe",
+		map[string]interface{}{"event_type": 1})
 }

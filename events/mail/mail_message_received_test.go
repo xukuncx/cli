@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/larksuite/cli/internal/event"
 )
@@ -148,6 +149,7 @@ type mockCall struct {
 	method string
 	path   string
 	body   interface{}
+	ctxErr error
 }
 
 type mockAPIClient struct {
@@ -156,8 +158,8 @@ type mockAPIClient struct {
 	failErr error
 }
 
-func (m *mockAPIClient) CallAPI(_ context.Context, method, path string, body interface{}) (json.RawMessage, error) {
-	m.calls = append(m.calls, mockCall{method: method, path: path, body: body})
+func (m *mockAPIClient) CallAPI(ctx context.Context, method, path string, body interface{}) (json.RawMessage, error) {
+	m.calls = append(m.calls, mockCall{method: method, path: path, body: body, ctxErr: ctx.Err()})
 	if m.failAt > 0 && len(m.calls) == m.failAt {
 		return nil, m.failErr
 	}
@@ -299,6 +301,23 @@ func TestMailMessageReceivedPreConsume_CleanupReverseOrder(t *testing.T) {
 	}
 }
 
+func TestMailMessageReceivedPreConsume_CleanupUsesFreshContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	mc := &mockAPIClient{}
+	cleanup, err := mailMessageReceivedPreConsume(ctx, mc, map[string]string{"mailbox": "a@x"})
+	if err != nil || cleanup == nil {
+		t.Fatalf("setup failed: err=%v", err)
+	}
+	cancel()
+	cleanup()
+	if len(mc.calls) != 2 {
+		t.Fatalf("expected subscribe and cleanup calls, got %d", len(mc.calls))
+	}
+	if mc.calls[1].ctxErr != nil {
+		t.Fatalf("cleanup should use a fresh context, got ctx err %v", mc.calls[1].ctxErr)
+	}
+}
+
 func TestMailMessageReceivedPreConsume_CleanupIndependentFailures(t *testing.T) {
 	// All subscribes succeed; cleanup of b fails but a and c should still be called.
 	mc := &customFailMockAPIClient{
@@ -418,6 +437,34 @@ func TestProcessMailMessageReceived_BodyExcerptTruncates140(t *testing.T) {
 	}
 }
 
+func TestProcessMailMessageReceived_BodyExcerptTruncatesRunes(t *testing.T) {
+	body := strings.Repeat("你", 141)
+	payload := fmt.Sprintf(`{
+		"header": {"event_id": "ev_utf8", "event_type": "mail.user_mailbox.event.message_received_v1", "create_time": ""},
+		"event": {"mail_address": "a@b.com", "message_id": "", "sender": "", "subject": "", "body": %q}
+	}`, body)
+	raw := &event.RawEvent{
+		EventID:   "ev_utf8",
+		EventType: mailEventType,
+		Payload:   json.RawMessage(payload),
+		Timestamp: time.Now(),
+	}
+	got, err := processMailMessageReceived(context.Background(), nil, raw, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var out MailMessageReceivedOutput
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if got := len([]rune(out.BodyExcerpt)); got != 140 {
+		t.Errorf("BodyExcerpt rune length = %d, want 140", got)
+	}
+	if !utf8.ValidString(out.BodyExcerpt) {
+		t.Errorf("BodyExcerpt should remain valid UTF-8")
+	}
+}
+
 func TestProcessMailMessageReceived_MalformedPayloadPassthrough(t *testing.T) {
 	malformed := json.RawMessage(`not valid json`)
 	raw := &event.RawEvent{
@@ -442,8 +489,8 @@ type customFailMockAPIClient struct {
 	failCalls map[int]error // 1-indexed call number → error to return
 }
 
-func (m *customFailMockAPIClient) CallAPI(_ context.Context, method, path string, body interface{}) (json.RawMessage, error) {
-	m.calls = append(m.calls, mockCall{method: method, path: path, body: body})
+func (m *customFailMockAPIClient) CallAPI(ctx context.Context, method, path string, body interface{}) (json.RawMessage, error) {
+	m.calls = append(m.calls, mockCall{method: method, path: path, body: body, ctxErr: ctx.Err()})
 	if err, ok := m.failCalls[len(m.calls)]; ok {
 		return nil, err
 	}
