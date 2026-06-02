@@ -427,6 +427,9 @@ func buildServiceRequest(opts *ServiceMethodOptions) (client.RawApiRequest, *cmd
 				WithParam(name)
 		}
 		if exists && !util.IsEmptyValue(value) {
+			if err := validateQueryParamRange(name, value, p, schemaPath); err != nil {
+				return client.RawApiRequest{}, nil, err
+			}
 			queryParams[name] = value
 		}
 	}
