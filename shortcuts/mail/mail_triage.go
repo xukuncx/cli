@@ -265,10 +265,18 @@ var MailTriage = common.Shortcut{
 			messages = []map[string]interface{}{}
 		}
 
+		// Inject mailbox_id into every message so downstream consumers
+		// (e.g. mail +message) can preserve the mailbox context for
+		// public/shared mailbox scenarios.
+		for _, msg := range messages {
+			msg["mailbox_id"] = mailbox
+		}
+
 		switch outFormat {
 		case "json", "data":
 			outData := map[string]interface{}{
 				"messages":   messages,
+				"mailbox_id": mailbox,
 				"count":      len(messages),
 				"has_more":   hasMore,
 				"page_token": nextPageToken,
@@ -287,6 +295,9 @@ var MailTriage = common.Shortcut{
 					"subject":    sanitizeForTerminal(strVal(msg["subject"])),
 					"message_id": msg["message_id"],
 				}
+				if mailbox != "me" {
+					row["mailbox_id"] = mailbox
+				}
 				if showLabels {
 					row["labels"] = msg["labels"]
 				}
@@ -297,6 +308,9 @@ var MailTriage = common.Shortcut{
 			if hasMore && nextPageToken != "" {
 				var hint strings.Builder
 				hint.WriteString("next page: mail +triage")
+				if mailbox != "me" {
+					hint.WriteString(" --mailbox " + shellQuote(mailbox))
+				}
 				if query != "" {
 					hint.WriteString(" --query " + shellQuote(query))
 				}
@@ -306,7 +320,11 @@ var MailTriage = common.Shortcut{
 				hint.WriteString(" --page-token " + shellQuote(nextPageToken))
 				fmt.Fprintln(runtime.IO().ErrOut, hint.String())
 			}
-			fmt.Fprintln(runtime.IO().ErrOut, "tip: use mail +message --message-id <id> to read full content")
+			if mailbox != "me" {
+				fmt.Fprintln(runtime.IO().ErrOut, "tip: use mail +message --mailbox "+shellQuote(mailbox)+" --message-id <id> to read full content")
+			} else {
+				fmt.Fprintln(runtime.IO().ErrOut, "tip: use mail +message --message-id <id> to read full content")
+			}
 		}
 		return nil
 	},
